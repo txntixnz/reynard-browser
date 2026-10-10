@@ -1,0 +1,163 @@
+import Foundation
+
+enum SessionOpening { case immediate(windowID: String?), manual, external }
+enum TabMode { case regular, `private` }
+enum LoadRequestTarget { case current, new, background }
+enum TabManagerUpdateReason { case location }
+struct SessionDelegates {}
+final class Settings {
+    func settings(for url: String?, tabID: UUID?) -> String { "settings" }
+}
+final class GeckoSession {
+    var id: String?
+    var active = true
+    let isPrivateMode: Bool
+    init(settings: String = "", isPrivateMode: Bool = false, isAddonPopup: Bool = false) {
+        self.isPrivateMode = isPrivateMode
+    }
+    func open(windowId: String?) { precondition(id == nil); id = windowId ?? "replacement" }
+    func isOpen() -> Bool { id != nil }
+}
+final class UniversalLinkManager {
+    func didCreateNewSession(from session: GeckoSession, for uri: String) {}
+}
+final class SessionManager {
+    let sessionSettings = Settings()
+    let universalLinkManager = UniversalLinkManager()
+    func bindDelegates(to session: GeckoSession, delegates: SessionDelegates) {}
+    func deactivate(_ session: GeckoSession) { session.active = false }
+    // CREATE_SESSION_METHOD
+}
+final class TabState { var openerTabID: UUID? }
+final class Tab {
+    let id: UUID
+    var session: GeckoSession
+    let isPrivate: Bool
+    let state = TabState()
+    var url: String?
+    var favicon: String?
+    init(id: UUID = UUID(), session: GeckoSession, isPrivate: Bool) {
+        self.id = id; self.session = session; self.isPrivate = isPrivate
+    }
+}
+final class PermissionCoordinator {
+    func restorePermissions(for session: GeckoSession, at uri: String) {}
+}
+final class Delegate {
+    var immediate = true
+    var pending: (() -> Void)?
+    var sawClosedTab = false
+    func tabManagerDidChangeTabs(_ manager: TabManagerImplementation) {
+        // A UI observer is allowed to run synchronously while tabs are published.
+        sawClosedTab = manager.regularTabs.contains { !$0.session.isOpen() }
+            || manager.privateTabs.contains { !$0.session.isOpen() }
+    }
+    func tabManager(_ manager: TabManagerImplementation, animateNewTabSelectionAt index: Int, completion: @escaping () -> Void) {
+        if immediate { completion() } else { pending = completion }
+    }
+}
+final class TabManagerImplementation {
+    var regularTabs: [Tab] = []
+    var privateTabs: [Tab] = []
+    var selectedTabMode = TabMode.regular
+    var selectedRegularTabIndex = 0
+    var selectedPrivateTabIndex = 0
+    let sessionManager = SessionManager()
+    let sessionDelegates = SessionDelegates()
+    let permissionCoordinator = PermissionCoordinator()
+    var delegate: Delegate? = Delegate()
+    var replacements = 0
+    var selections = 0
+    var selectedTab: Tab? {
+        let list = tabs(for: selectedTabMode)
+        let index = selectedTabMode == .regular ? selectedRegularTabIndex : selectedPrivateTabIndex
+        return list.indices.contains(index) ? list[index] : nil
+    }
+    func tabs(for mode: TabMode) -> [Tab] { mode == .regular ? regularTabs : privateTabs }
+    func tabLocation(for session: GeckoSession) -> (mode: TabMode, index: Int)? {
+        if let i = regularTabs.firstIndex(where: { $0.session === session }) { return (.regular, i) }
+        if let i = privateTabs.firstIndex(where: { $0.session === session }) { return (.private, i) }
+        return nil
+    }
+    func cachedFavicon(for uri: String) -> String? { nil }
+    func recordNavigation(_ uri: String, for tab: Tab) {}
+    func notifyUpdate(at index: Int, mode: TabMode, reason: TabManagerUpdateReason) {}
+    func scheduleFaviconUpdate(forTabAt index: Int, mode: TabMode) {}
+    func persistState() {}
+    func selectTab(at index: Int, mode: TabMode) {
+        if let previous = selectedTab { sessionManager.deactivate(previous.session) }
+        selectedTabMode = mode
+        if mode == .regular { selectedRegularTabIndex = index } else { selectedPrivateTabIndex = index }
+        let tab = selectedTab!
+        if !tab.session.isOpen() {
+            replacements += 1
+            tab.session = GeckoSession(isPrivateMode: tab.isPrivate)
+            tab.session.open(windowId: nil)
+        }
+        tab.session.active = true
+        selections += 1
+    }
+    // NEW_SESSION_METHOD
+}
+func check(_ value: @autoclosure () -> Bool, _ message: String) {
+    precondition(value(), message)
+    print("PASS: \(message)")
+}
+func sourceTab(in manager: TabManagerImplementation, isPrivate: Bool = false) -> Tab {
+    let session = GeckoSession(isPrivateMode: isPrivate)
+    session.open(windowId: "opener")
+    let tab = Tab(session: session, isPrivate: isPrivate)
+    if isPrivate { manager.privateTabs = [tab]; manager.selectedTabMode = .private }
+    else { manager.regularTabs = [tab] }
+    return tab
+}
+
+let finished = DispatchSemaphore(value: 0)
+Task.detached {
+    let manager = TabManagerImplementation()
+    let opener = sourceTab(in: manager)
+    let popup = await manager.onNewSession(session: opener.session, uri: "https://chatgpt.com/c/branch", windowId: "requested", target: .new)!
+    check(popup.id == "requested", "popup opens with Gecko's requested window identity")
+    check(manager.selectedTab?.session === popup, "immediate selection preserves the returned popup session")
+    check(manager.replacements == 0, "immediate selection never enters crash recovery")
+    check(!manager.delegate!.sawClosedTab, "UI observers only see opened popup tabs")
+    check(popup.active && !opener.session.active, "selection activates popup and deactivates opener")
+    check(manager.selectedTab?.state.openerTabID == opener.id, "regular popup retains its opener tab")
+
+    let delayed = TabManagerImplementation()
+    let delayedOpener = sourceTab(in: delayed)
+    delayed.delegate!.immediate = false
+    let delayedPopup = await delayed.onNewSession(session: delayedOpener.session, uri: "about:blank", windowId: "delayed", target: .new)!
+    check(delayedOpener.session.active, "opener stays active while the transition is pending")
+    check(delayedPopup.id == "delayed", "blank popup preserves requested identity without an extra URL load")
+    let popupTab = delayed.regularTabs.remove(at: 1)
+    delayed.regularTabs.insert(popupTab, at: 0)
+    delayed.selectedRegularTabIndex = 1
+    delayed.delegate!.pending!()
+    check(delayed.selectedTab === popupTab, "delayed selection finds the popup after tab reordering")
+    check(delayed.replacements == 0, "delayed selection keeps the original popup session")
+
+    let closed = TabManagerImplementation()
+    let closedOpener = sourceTab(in: closed)
+    closed.delegate!.immediate = false
+    _ = await closed.onNewSession(session: closedOpener.session, uri: "https://example.com", windowId: "closed", target: .new)
+    closed.regularTabs.remove(at: 1)
+    closed.delegate!.pending!()
+    check(closed.selections == 0, "closing a popup before the animation finishes does not select another tab")
+
+    let background = TabManagerImplementation()
+    let backgroundOpener = sourceTab(in: background)
+    let backgroundPopup = await background.onNewSession(session: backgroundOpener.session, uri: "https://example.com", windowId: "background", target: .background)!
+    check(backgroundPopup.id == "background" && !backgroundPopup.active, "background popup opens with the requested identity but stays inactive")
+    check(background.selectedTab === backgroundOpener && backgroundOpener.session.active, "background popup preserves active opener selection")
+    check(background.selections == 0, "background popup does not trigger a foreground transition")
+
+    let privateManager = TabManagerImplementation()
+    let privateOpener = sourceTab(in: privateManager, isPrivate: true)
+    let privatePopup = await privateManager.onNewSession(session: privateOpener.session, uri: "https://example.com", windowId: "private", target: .new)!
+    check(privatePopup.isPrivateMode && privateManager.regularTabs.isEmpty, "private popup stays in private mode")
+    check(privateManager.selectedTab?.state.openerTabID == nil, "private popup does not persist a regular opener identity")
+    finished.signal()
+}
+check(finished.wait(timeout: .now() + 5) == .success, "popup regression checks complete")
+print("All popup regression checks passed.")

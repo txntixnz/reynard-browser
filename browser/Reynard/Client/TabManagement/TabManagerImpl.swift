@@ -1619,7 +1619,10 @@ extension TabManagerImplementation: NavigationDelegate {
             url: uri,
             tabID: tabID,
             isPrivate: sourceIsPrivate,
-            opening: .external,
+            // Finish opening Gecko's requested window before exposing the tab
+            // to UI callbacks. Selection of a still-closed session would run
+            // crash recovery and replace the window, losing its opener.
+            opening: .immediate(windowID: windowId),
             delegates: sessionDelegates
         )
         sessionManager.universalLinkManager.didCreateNewSession(from: session, for: uri)
@@ -1660,13 +1663,14 @@ extension TabManagerImplementation: NavigationDelegate {
         
         guard target != .background else { return newSession }
         
-        if let previousSession = selectedTab?.session,
-           previousSession !== newSession {
-            sessionManager.deactivate(previousSession)
-        }
         selectedTabMode = mode
         delegate?.tabManager(self, animateNewTabSelectionAt: index) { [weak self] in
-            self?.selectTab(at: index, mode: mode)
+            guard let self,
+                  let currentIndex = self.tabs(for: mode).firstIndex(where: { $0.id == tabID }) else {
+                return
+            }
+            // selectTab deactivates the opener when selection actually occurs.
+            self.selectTab(at: currentIndex, mode: mode)
         }
         return newSession
     }

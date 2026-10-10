@@ -40,6 +40,24 @@ installing; do not uninstall the existing browser as part of this test.
 
 ## Validation and limits
 
+Working device baseline: commit 64632ac25f69a08043c2f5a3e73d88ce177e33cf,
+branch ios16-browser-only, successful run 38057152439. On 2026-10-10 the user
+reported normal ChatGPT loading, complete messages and no issues in initial use.
+Later they reported that website-created tabs (including Branch in new chat)
+stay on ChatGPT's loading spinner; video RPReplay_Final1791647029.mp4 shows this.
+
+The separate ios16-popup-fix test opens each website-created session with Gecko's
+requested window ID before publishing the tab to UI observers/animations.
+This prevents early selection from treating the unopened popup as a crashed
+session and replacing its opener-connected window. The source session stays
+active until selection occurs, and delayed animation completion resolves the
+new tab by ID rather than a potentially stale index. It does not issue a second
+URL load, preserving window.open and opener semantics. New regression checks
+exercise actual onNewSession/createSession methods with immediate/delayed UI,
+reordering, closed tabs, background targets and private mode. This addresses a
+source-level race; device testing must establish whether it resolves the spinner.
+The working baseline branch remains unchanged.
+
 The `ios16-browser-only` branch adds a separate browser-only workflow after the
 full Gecko build stopped producing visible progress. It reuses the engine from
 the official upstream 0.16.0 TrollStore package (build 63fb54d), verifies its
