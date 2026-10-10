@@ -910,6 +910,9 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
         }
         guard contentView.isDisplaying(session: selectedSession),
               let engineView = selectedSession.engineView,
+              // The hardware-focus bridge suppresses the software keyboard.
+              // Leave an existing editor's first-responder ownership alone.
+              !engineView.isFirstResponder,
               let window = engineView.window,
               window.isKeyWindow,
               window.windowScene?.activationState == .foregroundActive else {

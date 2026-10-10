@@ -15,53 +15,9 @@ extension FilePicker {
             return
         }
         
-        guard #available(iOS 14.0, *), !anchorRect.isEmpty else {
-            showActionSheet(in: geckoView)
-            return
-        }
-        
-        let button = FilePickerMenuAnchorButton(frame: anchorRect)
-        button.backgroundColor = .clear
-        button.menu = buildMenu()
-        button.showsMenuAsPrimaryAction = true
-        button.onMenuDismissed = { [weak self] in
-            self?.handleMenuDismissed()
-        }
-        
-        geckoView.addSubview(button)
-        anchorButton = button
-        presentMenuFromAnchorButton()
-    }
-    
-    @available(iOS 14.0, *)
-    private func buildMenu() -> UIMenu {
-        UIMenu(children: [
-            menuAction(.photoLibrary, symbol: "reynard.photo.on.rectangle"),
-            menuAction(.camera, symbol: "reynard.camera"),
-            menuAction(.chooseFile, symbol: "reynard.document"),
-        ])
-    }
-    
-    private func presentMenuFromAnchorButton() {
-        DispatchQueue.main.async { [weak self] in
-            guard let button = self?.anchorButton else { return }
-            let interaction = button.interactions.compactMap { $0 as? UIContextMenuInteraction }.first
-            guard let interaction else {
-                self?.handleMenuDismissed()
-                return
-            }
-            
-            let selector = NSSelectorFromString("_presentMenuAtLocation:")
-            if interaction.responds(to: selector) {
-                let center = CGPoint(x: button.bounds.midX, y: button.bounds.midY)
-                let implementation = interaction.method(for: selector)
-                typealias PresentMenu = @convention(c) (AnyObject, Selector, CGPoint) -> Void
-                let presentMenu = unsafeBitCast(implementation, to: PresentMenu.self)
-                presentMenu(interaction, selector, center)
-            } else {
-                self?.handleMenuDismissed()
-            }
-        }
+        // Use a native presentation that owns focus and participates in the
+        // normal controller lifecycle, without the private menu selector.
+        showActionSheet(in: geckoView)
     }
     
     func showActionSheet(in geckoView: UIView) {
@@ -71,9 +27,13 @@ extension FilePicker {
         }
         
         let alert = PromptAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        alert.onDismissed = { [weak self] in
-            self?.presentedController = nil
-            self?.handleMenuDismissed()
+        alert.onDismissed = { [weak self, weak alert] in
+            guard let self else { return }
+            if let alert {
+                self.handleActionSheetDismissed(alert)
+            } else {
+                self.handleMenuDismissed()
+            }
         }
         for action in availableActions {
             alert.addAction(UIAlertAction(title: title(for: action), style: .default) { [weak self] _ in
@@ -92,19 +52,6 @@ extension FilePicker {
         
         presenter.present(alert, animated: true)
         presentedController = alert
-    }
-    
-    @available(iOS 14.0, *)
-    private func menuAction(_ action: PickerAction, symbol: String) -> UIAction {
-        UIAction(
-            title: title(for: action),
-            image: UIImage(named: symbol),
-            attributes: canPerform(action) ? [] : .disabled
-        ) { [weak self] _ in
-            self?.launchFollowupPicker {
-                self?.performAction(action)
-            }
-        }
     }
     
     var preferredInitialAction: PickerAction? {
@@ -139,17 +86,6 @@ extension FilePicker {
         }
     }
     
-    private func canPerform(_ action: PickerAction) -> Bool {
-        switch action {
-        case .photoLibrary:
-            return canUsePhotoLibrary
-        case .camera:
-            return canUseCamera
-        case .chooseFile:
-            return true
-        }
-    }
-    
     private var cameraActionTitle: String {
         let mediaTypes = Set(acceptedTypes.mediaTypes)
         let supportsImages = mediaTypes.contains(kUTTypeImage as String)
@@ -169,7 +105,24 @@ extension FilePicker {
     
     func launchFollowupPicker(_ action: @escaping @MainActor () -> Void) {
         launchedFollowupPicker = true
-        DispatchQueue.main.async(execute: action)
+        guard let controller = presentedController else {
+            DispatchQueue.main.async(execute: action)
+            return
+        }
+        controller.dismiss(animated: true) { [weak self] in
+            guard let self, self.continuation != nil else { return }
+            self.presentedController = nil
+            action()
+        }
+    }
+
+    func handleActionSheetDismissed(_ controller: UIViewController) {
+        // PromptAlertController reports dismissal on the next run loop. By
+        // then Photos/Files may already be installed as presentedController.
+        if presentedController === controller {
+            presentedController = nil
+        }
+        handleMenuDismissed()
     }
     
     func handleMenuDismissed() {
