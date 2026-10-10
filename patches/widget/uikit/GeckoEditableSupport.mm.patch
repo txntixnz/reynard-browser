@@ -3,7 +3,7 @@ new file mode 100644
 index 000000000000..24eeaa8bd3a6
 --- /dev/null
 +++ b/widget/uikit/GeckoEditableSupport.mm
-@@ -0,0 +1,4250 @@
+@@ -0,0 +1,4273 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -3051,6 +3051,29 @@ index 000000000000..24eeaa8bd3a6
 +  if (aInteraction != mEditable.mEditableTextInteraction &&
 +      aInteraction != mEditable.mNonEditableTextInteraction) {
 +    return NO;
++  }
++
++  // UITextInteraction covers the whole Gecko view. An editable interaction
++  // must not interpret page buttons or a popup menu as caret-placement taps.
++  // Let Gecko receive those touches without UIKit reclaiming keyboard focus.
++  if (aInteraction == mEditable.mEditableTextInteraction) {
++    widget::TextInputHandler* handler = [self textHandler];
++    LayoutDeviceIntRect editorDevRect;
++    BOOL insideEditor = NO;
++    if (handler && handler->EditorRect(editorDevRect)) {
++      CGRect editorRect =
++          DevPixelsToUIKitPoints(editorDevRect, [self contentScaleFactor]);
++      insideEditor = ClipCGRectToBounds(editorRect, self.bounds) &&
++                     CGRectContainsPoint(CGRectStandardize(editorRect), aPoint);
++    }
++    NSRange range = [self selectedRange];
++    const BOOL touchesHandle =
++        handler && range.location != NSNotFound && range.length > 0 &&
++        [self closestHandleToPoint:aPoint range:range handler:handler] !=
++            GeckoSelectionHandleNone;
++    if (!insideEditor && !touchesHandle) {
++      return NO;
++    }
 +  }
 +
 +  [self setSelectionHandlesVisible:YES];

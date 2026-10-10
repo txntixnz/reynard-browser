@@ -1,0 +1,35 @@
+name: iOS 16 Text Interaction Test
+
+on:
+  push:
+    branches: [ios16-text-interaction]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios16-text-interaction-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Browser and native text interaction regression checks
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.6'
+      - name: Run regression checks
+        run: python3 tests/stability/run.py
+
+  build:
+    needs: regression
+    uses: ./.github/workflows/build.yml
+    with:
+      checkout_ref: ${{ github.sha }}
+      nightly: false
+      build_normal_ipa: false
+      build_trollstore_tipa: true
+      build_jailbroken_ipa: false

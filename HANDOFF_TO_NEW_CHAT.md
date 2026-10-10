@@ -54,6 +54,23 @@ public action sheet, waits for that sheet to dismiss before launching Photos
 or Files, and protects the followup controller from a delayed dismissal
 callback. Regression checks cover focus ownership and picker handoff using
 the actual production methods; UIKit and ChatGPT still require device retests.
+On 2026-10-10 the user reported that picker build 40e4121 still glitches.
+The new clip 01-RPReplay_Final1791653597.mp4 shows the web attachment menu
+followed by keyboard/page jumps, without a native file picker appearing.
+
+The ios16-text-interaction candidate changes the native editable
+UITextInteraction delegate: it now checks Gecko's editor rectangle, converted
+from device pixels and clipped to visible view bounds, before starting a text
+gesture. Selection handles outside that rectangle remain allowed for nonempty
+selections; noneditable page selection is unchanged. Previously every point
+in the whole Gecko view was accepted, and interactionWillBegin takes first
+responder ownership. This is a plausible interference path for web buttons;
+only a device retest can establish whether it causes the reported glitch.
+Done now explicitly suppresses the software keyboard through the existing
+hardware-focus bridge, instead of only resigning with the editor still focused.
+Regression fixtures execute the production native delegate and Done method.
+This candidate requires a full Gecko rebuild. The browser-only workflow must
+not be used because its released-engine source guard rejects this patch.
 The previous working branches remain available.
 
 Working device baseline: commit 64632ac25f69a08043c2f5a3e73d88ce177e33cf,
