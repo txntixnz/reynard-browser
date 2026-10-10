@@ -29,7 +29,9 @@ import Foundation
     let tabManager = TabManager()
     let contentView = ContentView()
     // RESTORE_FOCUS_METHOD
+    // DISMISS_KEYBOARD_METHOD
     func restore(_ session: GeckoSession? = nil) { restoreContentKeyboardFocus(for: session) }
+    func dismissKeyboard() { dismissContentKeyboard() }
 }
 @MainActor final class UIViewController {
     var dismissals = 0
@@ -74,6 +76,11 @@ import Foundation
         browser.contentView.displaying = false
         browser.restore(session)
         check(session.hardwareFocusCalls == 1, "hidden content cannot reclaim keyboard focus")
+        browser.dismissKeyboard()
+        check(session.hardwareFocusCalls == 1, "dismissal cannot affect hidden content")
+        browser.contentView.displaying = true
+        browser.dismissKeyboard()
+        check(session.hardwareFocusCalls == 2, "Done explicitly suppresses the software keyboard")
 
         let picker = FilePicker()
         let sheet = UIViewController()

@@ -501,7 +501,7 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
             }
         }
         browserChrome.onKeyboardDismissal = { [weak self] in
-            self?.tabManager.selectedTab?.session.engineView?.resignFirstResponder()
+            self?.dismissContentKeyboard()
         }
     }
     
@@ -883,6 +883,14 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
     }
     
     // MARK: - Keyboard
+
+    private func dismissContentKeyboard() {
+        guard let session = tabManager.selectedTab?.session,
+              contentView.isDisplaying(session: session) else { return }
+        // Keep content focus, but explicitly suppress the software keyboard.
+        // Resigning alone leaves the focused editor authorized to reopen it.
+        session.focusForHardwareKeyboard()
+    }
     
     func requestContentKeyboardFocus(for expectedSession: GeckoSession? = nil) {
         DispatchQueue.main.async { [weak self] in

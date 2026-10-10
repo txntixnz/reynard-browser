@@ -50,11 +50,21 @@ with tempfile.TemporaryDirectory(prefix="reynard-stability-") as tmp:
     picker_menu = ROOT / "browser/Reynard/Client/Interface/ContentView/WebContent/FilePicker/FilePickerMenu.swift"
     picker_source = (ROOT / "tests/stability/PickerRegression.swift.template").read_text().replace(
         "// RESTORE_FOCUS_METHOD", method(ROOT / "browser/Reynard/Client/Interface/BrowserViewController.swift", "private func restoreContentKeyboardFocus(")
-    ).replace("// FOLLOWUP_METHOD", method(picker_menu, "func launchFollowupPicker(")).replace(
+    ).replace("// DISMISS_KEYBOARD_METHOD", method(ROOT / "browser/Reynard/Client/Interface/BrowserViewController.swift", "private func dismissContentKeyboard(")).replace("// FOLLOWUP_METHOD", method(picker_menu, "func launchFollowupPicker(")).replace(
         "// SHEET_DISMISSED_METHOD", method(picker_menu, "func handleActionSheetDismissed(")
     )
     swift_file.write_text(picker_source)
     subprocess.run(["swiftc", "-parse-as-library", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
+
+    patch = (ROOT / "patches/widget/uikit/GeckoEditableSupport.mm.patch").read_text()
+    native_source = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    start = native_source.index("- (BOOL)interactionShouldBegin:")
+    end = native_source.index("\n}", start) + 2
+    native_template = (ROOT / "tests/stability/TextInteractionRegression.mm.template").read_text()
+    native_file = Path(tmp) / "text-interaction.mm"
+    native_file.write_text(native_template.replace("// INTERACTION_METHOD", native_source[start:end]))
+    subprocess.run(["clang++", "-std=c++17", "-fobjc-arc", "-framework", "Foundation", "-framework", "CoreGraphics", str(native_file), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 
     popup_template = (ROOT / "tests/stability/NewTabRegression.swift.template").read_text()
