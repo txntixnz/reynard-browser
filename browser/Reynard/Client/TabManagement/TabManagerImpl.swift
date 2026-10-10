@@ -609,7 +609,11 @@ final class TabManagerImplementation: NSObject, TabManager {
         
         let didTerminateSelectedTab = selectedTab?.session === session
         let tab = tabs(for: location.mode)[location.index]
-        if let sessionState = session.currentSessionState {
+        if let sessionState = session.currentSessionState,
+           restorableSessionState(
+               sessionState,
+               matching: restoredURL(from: tab.url)
+           ) != nil {
             tab.state.tabSessionState = sessionManager.usesStoredNavigationHistory(for: tab.id)
             ? sessionState.currentPageState()
             : sessionState

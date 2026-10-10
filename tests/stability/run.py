@@ -30,6 +30,7 @@ tab_methods = "\n".join(method(TAB_SOURCE, sig) for sig in [
     "private func hasDisplayURL(", "private func restorableSessionState(",
     "private func prepareRestoration(\n", "private func prepareRestoration(for",
     "private func restoreTabIfNeeded(", "private func recoverSelectedSessionIfNeeded(",
+    "private func handleSessionTermination(",
     "func onSessionStateChange(", "func onSlowScript(",
 ])
 state_source = (ROOT / "browser/GeckoView/Session/GeckoSessionState.swift").read_text()

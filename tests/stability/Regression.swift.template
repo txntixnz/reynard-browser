@@ -10,6 +10,12 @@ enum SessionNavigationAvailability { case unavailable }
 enum TabRestoreState: Equatable { case none, pendingSession, pendingURL(String) }
 enum TabDisplayState { case committed, pending(String) }
 enum TabLoadingState { case idle, loading(progress: Float) }
+enum TabManagerUpdateReason { case loading }
+
+final class DownloadStore {
+    static let shared = DownloadStore()
+    func failCapturedDownloads(for session: GeckoSession) {}
+}
 
 final class MediaSession {
     var muted = false
@@ -22,6 +28,7 @@ final class GeckoSession {
     var flushes = 0
     var loads: [String] = []
     var restores: [GeckoSessionState] = []
+    var currentSessionState: GeckoSessionState?
     let mediaSession = MediaSession()
     func isOpen() -> Bool { opened }
     func setActive(_ value: Bool) { active = value }
@@ -57,6 +64,7 @@ final class SessionManager {
     func open(_ session: GeckoSession) { session.opened = true }
     func close(_ session: GeckoSession) { deactivate(session); session.opened = false; closed.append(session) }
     func usesStoredNavigationHistory(for id: UUID) -> Bool { storedHistory }
+    func clearExternalResponseRetention(for session: GeckoSession) {}
     // SESSION_METHODS
 }
 final class SystemMediaSession {
@@ -65,6 +73,8 @@ final class SystemMediaSession {
 }
 final class Delegate {
     var replacementWasActive = false
+    var terminations = 0
+    func tabManagerDidTerminateSelectedTab(_ manager: TabManagerImplementation) { terminations += 1 }
     func tabManager(_ manager: TabManagerImplementation, didReplaceSelectedSession old: GeckoSession, with new: GeckoSession) {
         replacementWasActive = new.active && new.focused
     }
@@ -77,7 +87,9 @@ final class TabManagerImplementation {
     let systemMediaSession = SystemMediaSession()
     var delegate: Delegate? = Delegate()
     var persists = 0
+    weak var sessionEligibleForSilentRecovery: GeckoSession?
     func persistState() { persists += 1 }
+    func notifyUpdate(at index: Int, mode: TabMode, reason: TabManagerUpdateReason) {}
     func tabLocation(for session: GeckoSession) -> (mode: TabMode, index: Int)? {
         selectedTab?.session === session ? (.regular, 0) : nil
     }
@@ -100,6 +112,7 @@ final class TabManagerImplementation {
     }
     func prepareForRecovery(_ tab: Tab) { prepareRestoration(for: tab) }
     func recover() { recoverSelectedSessionIfNeeded() }
+    func terminate(_ session: GeckoSession) { handleSessionTermination(session) }
 }
 
 func snapshot(_ url: String, draft: String = "unsent draft") -> GeckoSessionState {
@@ -168,6 +181,28 @@ manager.sessionManager.setApplicationForeground(false)
 liveSession.opened = false
 manager.recover()
 check(valid.session === liveSession, "recovery does not create a window while backgrounded")
+
+let crashManager = TabManagerImplementation()
+let crashTab = crashManager.prepare(current, url: conversation)
+crashManager.selectedTab = crashTab
+crashTab.session.opened = true
+crashTab.session.currentSessionState = snapshot("about:blank")
+crashManager.terminate(crashTab.session)
+check(crashTab.state.restoreState == .pendingSession, "crash with blank engine state preserves the saved session")
+check(crashTab.state.tabSessionState!.serializedString()!.contains("unsent draft"), "crash with blank engine state preserves the saved draft")
+check(crashManager.delegate!.terminations == 1, "foreground crashes still show the normal page error")
+crashManager.applicationDidBecomeActive()
+check(crashTab.session.restores.count == 1, "foreground recovery restores saved form state after a blank crash")
+
+let delayedManager = TabManagerImplementation()
+let delayedTab = delayedManager.prepare(current, url: conversation)
+delayedManager.selectedTab = delayedTab
+delayedTab.session.opened = true
+let delayedOldSession = delayedTab.session
+delayedManager.sessionEligibleForSilentRecovery = delayedOldSession
+delayedManager.terminate(delayedOldSession)
+check(delayedTab.session !== delayedOldSession && delayedTab.session.active, "delayed background termination silently recovers an active tab")
+check(delayedManager.delegate!.terminations == 0, "delayed background termination does not display a foreground crash error")
 
 let slowScriptFinished = DispatchSemaphore(value: 0)
 Task.detached {

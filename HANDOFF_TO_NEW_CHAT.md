@@ -21,7 +21,8 @@ Target: iPhone 13 Pro Max, iOS 16.0, TrollStore, Dopamine.
 - Use serialized session/form state only when its current history URL matches
   the saved tab URL. Fall back to the saved URL for stale/invalid history.
 - Ignore initial about:blank state updates for tabs with a saved page, so they
-  cannot replace the last useful page/form snapshot.
+  cannot replace the last useful page/form snapshot. Also reject blank/stale
+  engine snapshots during process termination before saving recovery state.
 - Wait for slow content scripts instead of automatically terminating them.
   This can help heavy web apps survive temporary stalls. Truly stuck scripts
   now require the user to reload or close the tab.
