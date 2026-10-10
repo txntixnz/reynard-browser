@@ -40,6 +40,22 @@ installing; do not uninstall the existing browser as part of this test.
 
 ## Validation and limits
 
+On 2026-10-10 the user reported that opening website-created tabs now works
+with popup-test commit 9d7ca40bd9a1b6e941f95c6d25818ee67c625fb5, but continues
+testing. New clip RPReplay_Final1791651968.mp4 shows repeated keyboard/page
+jumps while using ChatGPT's attachment plus button, often before a native
+picker appears.
+
+The separate ios16-picker-fix candidate leaves an existing engine first
+responder alone during content focus restoration: the hardware-focus bridge
+explicitly suppresses the software keyboard. It dismisses content editing at
+native file-picker entry, replaces private inline menu presentation with a
+public action sheet, waits for that sheet to dismiss before launching Photos
+or Files, and protects the followup controller from a delayed dismissal
+callback. Regression checks cover focus ownership and picker handoff using
+the actual production methods; UIKit and ChatGPT still require device retests.
+The previous working branches remain available.
+
 Working device baseline: commit 64632ac25f69a08043c2f5a3e73d88ce177e33cf,
 branch ios16-browser-only, successful run 38057152439. On 2026-10-10 the user
 reported normal ChatGPT loading, complete messages and no issues in initial use.

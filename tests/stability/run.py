@@ -47,6 +47,16 @@ with tempfile.TemporaryDirectory(prefix="reynard-stability-") as tmp:
     subprocess.run(["swiftc", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 
+    picker_menu = ROOT / "browser/Reynard/Client/Interface/ContentView/WebContent/FilePicker/FilePickerMenu.swift"
+    picker_source = (ROOT / "tests/stability/PickerRegression.swift.template").read_text().replace(
+        "// RESTORE_FOCUS_METHOD", method(ROOT / "browser/Reynard/Client/Interface/BrowserViewController.swift", "private func restoreContentKeyboardFocus(")
+    ).replace("// FOLLOWUP_METHOD", method(picker_menu, "func launchFollowupPicker(")).replace(
+        "// SHEET_DISMISSED_METHOD", method(picker_menu, "func handleActionSheetDismissed(")
+    )
+    swift_file.write_text(picker_source)
+    subprocess.run(["swiftc", "-parse-as-library", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
+
     popup_template = (ROOT / "tests/stability/NewTabRegression.swift.template").read_text()
     popup_source = popup_template.replace(
         "// CREATE_SESSION_METHOD", method(SESSION_SOURCE, "func createSession(")
