@@ -1,0 +1,214 @@
+import Foundation
+
+// STATE_SOURCE
+// PAYLOAD_SOURCE
+
+enum SlowScriptResponse { case halt, resume }
+enum SessionOpening { case manual }
+enum TabMode { case regular }
+enum SessionNavigationAvailability { case unavailable }
+enum TabRestoreState: Equatable { case none, pendingSession, pendingURL(String) }
+enum TabDisplayState { case committed, pending(String) }
+enum TabLoadingState { case idle, loading(progress: Float) }
+enum TabManagerUpdateReason { case loading }
+
+final class DownloadStore {
+    static let shared = DownloadStore()
+    func failCapturedDownloads(for session: GeckoSession) {}
+}
+
+final class MediaSession {
+    var muted = false
+    func muteAudio(_ muted: Bool) { self.muted = muted }
+}
+final class GeckoSession {
+    var opened = false
+    var active = false
+    var focused = false
+    var flushes = 0
+    var loads: [String] = []
+    var restores: [GeckoSessionState] = []
+    var currentSessionState: GeckoSessionState?
+    let mediaSession = MediaSession()
+    func isOpen() -> Bool { opened }
+    func setActive(_ value: Bool) { active = value }
+    func setFocused(_ value: Bool) { focused = value }
+    func flushSessionState() { flushes += 1 }
+    func load(_ url: String) { loads.append(url) }
+    func restoreState(_ state: GeckoSessionState) { restores.append(state) }
+}
+final class TabSessionState {
+    var restoreState: TabRestoreState = .none
+    var tabSessionState: GeckoSessionState?
+    var loadingState = TabLoadingState.idle
+    var suppressInitialNavigation = true
+    var showsStartupHomepage = false
+    var sessionNavigationAvailability = SessionNavigationAvailability.unavailable
+    var displayState = TabDisplayState.committed
+}
+final class Tab {
+    let id = UUID()
+    var session = GeckoSession()
+    var url: String?
+    var isPrivate = false
+    var isMuted = false
+    let state = TabSessionState()
+}
+final class SessionManager {
+    private var sessionsRequestedActive: [ObjectIdentifier: GeckoSession] = [:]
+    private var isApplicationForeground = true
+    private(set) var isApplicationActive = true
+    var isForeground: Bool { isApplicationForeground }
+    var closed: [GeckoSession] = []
+    var storedHistory = false
+    func open(_ session: GeckoSession) { session.opened = true }
+    func close(_ session: GeckoSession) { deactivate(session); session.opened = false; closed.append(session) }
+    func usesStoredNavigationHistory(for id: UUID) -> Bool { storedHistory }
+    func clearExternalResponseRetention(for session: GeckoSession) {}
+    // SESSION_METHODS
+}
+final class SystemMediaSession {
+    var selected: GeckoSession?
+    func select(session: GeckoSession) { selected = session }
+}
+final class Delegate {
+    var replacementWasActive = false
+    var terminations = 0
+    func tabManagerDidTerminateSelectedTab(_ manager: TabManagerImplementation) { terminations += 1 }
+    func tabManager(_ manager: TabManagerImplementation, didReplaceSelectedSession old: GeckoSession, with new: GeckoSession) {
+        replacementWasActive = new.active && new.focused
+    }
+}
+final class TabManagerImplementation {
+    var selectedTab: Tab?
+    var selectedTabIndex = 0
+    var selectedTabMode = TabMode.regular
+    let sessionManager = SessionManager()
+    let systemMediaSession = SystemMediaSession()
+    var delegate: Delegate? = Delegate()
+    var persists = 0
+    weak var sessionEligibleForSilentRecovery: GeckoSession?
+    func persistState() { persists += 1 }
+    func notifyUpdate(at index: Int, mode: TabMode, reason: TabManagerUpdateReason) {}
+    func tabLocation(for session: GeckoSession) -> (mode: TabMode, index: Int)? {
+        selectedTab?.session === session ? (.regular, 0) : nil
+    }
+    func tabs(for mode: TabMode) -> [Tab] { selectedTab.map { [$0] } ?? [] }
+    func createSession(tabID: UUID, url: String?, windowId: String?, isPrivate: Bool, opening: SessionOpening) -> GeckoSession { GeckoSession() }
+    func selectTab(at index: Int, mode: TabMode) {
+        recoverSelectedSessionIfNeeded()
+        if let tab = selectedTab { sessionManager.activate(tab.session) }
+    }
+    func loadURL(_ url: String, in tab: Tab) {
+        tab.state.restoreState = .none
+        tab.session.load(url)
+    }
+    // TAB_METHODS
+
+    func prepare(_ state: GeckoSessionState?, url: String?, isPrivate: Bool = false) -> Tab {
+        let tab = Tab(); tab.url = url; tab.isPrivate = isPrivate
+        prepareRestoration(serializedSessionState: state?.serializedString(), fallbackURL: url, for: tab)
+        return tab
+    }
+    func prepareForRecovery(_ tab: Tab) { prepareRestoration(for: tab) }
+    func recover() { recoverSelectedSessionIfNeeded() }
+    func terminate(_ session: GeckoSession) { handleSessionTermination(session) }
+}
+
+func snapshot(_ url: String, draft: String = "unsent draft") -> GeckoSessionState {
+    let payload: [String: Any] = [
+        "history": ["entries": [["url": url]], "index": 1],
+        "formdata": ["id": ["prompt": draft]],
+    ]
+    let json = try! JSONSerialization.data(withJSONObject: payload)
+    return GeckoSessionState(serializedString: String(decoding: json, as: UTF8.self))!
+}
+func check(_ condition: @autoclosure () -> Bool, _ message: String) {
+    precondition(condition(), message)
+    print("PASS: \(message)")
+}
+
+let manager = TabManagerImplementation()
+let conversation = "https://chatgpt.com/c/current"
+let current = snapshot(conversation)
+let stale = snapshot("https://chatgpt.com/c/old")
+
+let valid = manager.prepare(current, url: conversation)
+check(valid.state.restoreState == .pendingSession, "matching history restores session")
+check(valid.state.tabSessionState!.serializedString()!.contains("unsent draft"), "restoration retains unsent form data")
+let fallback = manager.prepare(stale, url: conversation)
+check(fallback.state.restoreState == .pendingURL(conversation), "stale history falls back to the current tab URL")
+let invalid = manager.prepare(snapshot("about:blank"), url: conversation)
+check(invalid.state.restoreState == .pendingURL(conversation), "blank history falls back to the tab URL")
+let privateTab = manager.prepare(current, url: conversation, isPrivate: true)
+check(privateTab.state.restoreState == .pendingURL(conversation), "private tabs retain URL-only restoration")
+let noURL = manager.prepare(current, url: nil)
+check(noURL.state.restoreState == .pendingSession, "history can restore a tab with no fallback URL")
+
+manager.selectedTab = valid
+manager.onSessionStateChange(session: valid.session, sessionState: snapshot("about:blank"))
+check(valid.state.tabSessionState!.serializedString()!.contains("unsent draft"), "initial blank state cannot erase the saved draft")
+check(manager.persists == 0, "initial blank state is not persisted over the saved page")
+manager.onSessionStateChange(session: valid.session, sessionState: snapshot(conversation, draft: "updated draft"))
+check(valid.state.tabSessionState!.serializedString()!.contains("updated draft"), "real page state is persisted")
+
+valid.state.tabSessionState = stale
+manager.prepareForRecovery(valid)
+check(valid.state.restoreState == .pendingURL(conversation), "crash recovery also rejects stale history")
+valid.isMuted = true
+let oldSession = valid.session
+manager.recover()
+check(valid.session !== oldSession && valid.session.isOpen(), "closed selected tab receives a replacement window")
+check(valid.session.active && valid.session.focused, "direct recovery activates and focuses the replacement")
+check(valid.session.loads == [conversation], "recovery loads the expected conversation")
+check(valid.session.mediaSession.muted, "recovery preserves the tab's mute setting")
+check(manager.systemMediaSession.selected === valid.session, "recovery updates media selection")
+check(manager.delegate!.replacementWasActive, "replacement is active before presentation")
+check(manager.sessionManager.closed.contains { $0 === oldSession }, "recovery disposes the previous session")
+
+let liveSession = valid.session
+manager.sessionManager.setApplicationForeground(false)
+check(!liveSession.active, "background transition deactivates the page")
+manager.sessionManager.applicationDidBecomeActive()
+manager.applicationDidBecomeActive()
+check(liveSession.active && liveSession.focused, "foreground transition reactivates the existing page")
+check(valid.session === liveSession && liveSession.loads.count == 1, "warm resume preserves page and draft without reload")
+manager.sessionManager.deactivate(liveSession)
+manager.applicationDidBecomeActive()
+check(liveSession.active, "activation repairs an open but inactive selected window")
+
+manager.sessionManager.setApplicationForeground(false)
+liveSession.opened = false
+manager.recover()
+check(valid.session === liveSession, "recovery does not create a window while backgrounded")
+
+let crashManager = TabManagerImplementation()
+let crashTab = crashManager.prepare(current, url: conversation)
+crashManager.selectedTab = crashTab
+crashTab.session.opened = true
+crashTab.session.currentSessionState = snapshot("about:blank")
+crashManager.terminate(crashTab.session)
+check(crashTab.state.restoreState == .pendingSession, "crash with blank engine state preserves the saved session")
+check(crashTab.state.tabSessionState!.serializedString()!.contains("unsent draft"), "crash with blank engine state preserves the saved draft")
+check(crashManager.delegate!.terminations == 1, "foreground crashes still show the normal page error")
+crashManager.applicationDidBecomeActive()
+check(crashTab.session.restores.count == 1, "foreground recovery restores saved form state after a blank crash")
+
+let delayedManager = TabManagerImplementation()
+let delayedTab = delayedManager.prepare(current, url: conversation)
+delayedManager.selectedTab = delayedTab
+delayedTab.session.opened = true
+let delayedOldSession = delayedTab.session
+delayedManager.sessionEligibleForSilentRecovery = delayedOldSession
+delayedManager.terminate(delayedOldSession)
+check(delayedTab.session !== delayedOldSession && delayedTab.session.active, "delayed background termination silently recovers an active tab")
+check(delayedManager.delegate!.terminations == 0, "delayed background termination does not display a foreground crash error")
+
+let slowScriptFinished = DispatchSemaphore(value: 0)
+Task.detached {
+    let response = await manager.onSlowScript(session: liveSession, scriptFileName: "")
+    check(response == .resume, "temporary slow scripts are allowed to continue")
+    slowScriptFinished.signal()
+}
+check(slowScriptFinished.wait(timeout: .now() + 5) == .success, "slow-script decision completes")
+print("All session regression checks passed.")

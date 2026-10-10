@@ -139,11 +139,16 @@ final class SessionManager {
     
     func applicationDidBecomeActive() {
         isApplicationActive = true
+        // Recover even if UIKit coalesced a foreground transition.
+        setApplicationForeground(true)
     }
     
     // MARK: - Session State Persistence
     
     private func persistSessionState() {
+        // Save the last known snapshot even if a suspended/crashed content
+        // process never answers the asynchronous state-flush request.
+        tabStore.flushPendingWrites()
         guard sessionStateBackgroundTask == .invalid else {
             return
         }
@@ -158,13 +163,13 @@ final class SessionManager {
                 return
             }
             defer {
+                tabStore.flushPendingWrites()
                 endSessionStateBackgroundTask()
             }
             do {
                 for session in sessions where session.isOpen() {
                     try await session.flushSessionState()
                 }
-                tabStore.flushPendingWrites()
             } catch {
                 NSLog("Failed to persist session state before suspension: %@", "\(error)")
             }
