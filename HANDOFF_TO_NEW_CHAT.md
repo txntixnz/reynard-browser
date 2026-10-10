@@ -40,6 +40,15 @@ installing; do not uninstall the existing browser as part of this test.
 
 ## Validation and limits
 
+The `ios16-browser-only` branch adds a separate browser-only workflow after the
+full Gecko build stopped producing visible progress. It reuses the engine from
+the official upstream 0.16.0 TrollStore package (build 63fb54d), verifies its
+SHA-256 and matching engine source/patches, and rebuilds GeckoView, browser,
+extensions and idevice support. Bridge headers retain Firefox MPL notices and
+their provenance is documented in tools/prebuilt-gecko-headers/README.md.
+This workflow produces the same candidate browser fixes without compiling Gecko.
+Its concurrency group is separate from the original full build.
+
 `tests/stability/run.py` compiles actual extracted production restoration and
 activation methods plus GeckoSessionState/PayloadValue with engine doubles.
 It checks matching/stale/blank history, form data retention, private URL-only
