@@ -46,3 +46,11 @@ with tempfile.TemporaryDirectory(prefix="reynard-stability-") as tmp:
     binary = Path(tmp) / "regression"
     subprocess.run(["swiftc", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
+
+    popup_template = (ROOT / "tests/stability/NewTabRegression.swift.template").read_text()
+    popup_source = popup_template.replace(
+        "// CREATE_SESSION_METHOD", method(SESSION_SOURCE, "func createSession(")
+    ).replace("// NEW_SESSION_METHOD", method(TAB_SOURCE, "func onNewSession("))
+    swift_file.write_text(popup_source)
+    subprocess.run(["swiftc", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
