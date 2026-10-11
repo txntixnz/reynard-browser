@@ -1,5 +1,44 @@
 # Reynard iOS 16 stability test 1
 
+## Current device baseline and next candidate (2026-10-11)
+
+User confirmed `ios16-text-interaction`, commit
+626195e58056f946f73d6fdc88cd8809fdc954c2, fixes the attachment-menu keyboard
+glitch. Full build 38072739578 succeeded. Preserve that native engine patch.
+Remaining failure: leave ChatGPT working for 2–3 minutes, return to a network /
+timeout error or missing messages about half the time. Reload is unreliable;
+several force quits may be needed, including failure on the first fresh launch.
+
+`ios16-resume-fix` requests a finite 180-second background window for the
+selected ChatGPT page, keeps that session active within the window, ends it
+on expiry, return, tab switch or close, and requests a nondestructive repaint
+on resume. UIKit fallback is limited by the OS. The TrollStore private build
+also requests runtime-checked BKS assertions for the host and tab/socket
+processes, with explicit deadline cleanup and child-exit pruning. A denied
+or unavailable assertion falls back to UIKit; device grants are unverified.
+No audio mode, automatic reload, cookie clearing or draft reset is added.
+
+Helper processes exit when the host's XPC connection is interrupted/invalidated,
+the bootstrap ping fails, or the host exits. Previously the helper retained a
+static engine connection without host-loss cleanup. Orphan reuse is a hypothesis
+for repeated force-quit failures, not a confirmed root cause.
+
+The fast resume workflow reuses the exact successful keyboard engine artifact
+11683403964, checks its run/commit, archive digest, app version and engine-source
+match, then rebuilds browser/framework/helper targets. This avoids another
+full Gecko compile while retaining the device-confirmed keyboard fix.
+
+New fixtures exercise production lifecycle and native assertion methods with
+controlled API results, plus helper host-disconnection paths. They do not
+reproduce ChatGPT or prove iOS will grant background activity. Device tests:
+repeat 2–3-minute background responses, check drafts/messages, and reopen after
+one force quit. User will report completion; do not monitor entire workflows.
+
+Additional user report: autocorrect/word suggestions (not voice dictation)
+can misbehave after deleting/retyping a word and take too long to select the
+correct word. Investigate native text-input synchronization separately from
+the fast resume build so its engine pin remains valid.
+
 User fork: https://github.com/txntixnz/reynard-browser
 Base commit: 5fd27d85581814094e1c901d53c8b3095aa11f3b (upstream 0.16.0)
 Target: iPhone 13 Pro Max, iOS 16.0, TrollStore, Dopamine.

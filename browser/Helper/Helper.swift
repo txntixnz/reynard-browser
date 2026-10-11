@@ -7,6 +7,7 @@
 
 import GeckoView
 import Foundation
+import Darwin
 
 @objc private protocol BootstrapPing {
     func ping()
@@ -15,6 +16,14 @@ import Foundation
 @MainActor
 private final class ProcessBootstrap {
     private static var connection: NSXPCConnection?
+    private static var hostExitMonitor: DispatchSourceProcess?
+
+    nonisolated private static func handleHostDisconnection() {
+        // A Gecko runtime cannot be attached to a different host after launch.
+        // Exit the orphan instead of letting NSExtension reuse a stale runtime.
+        NSLog("Reynard Helper: host disconnected; exiting the child runtime")
+        _exit(EXIT_SUCCESS)
+    }
     
     static func start(
         context: NSExtensionContext,
@@ -40,6 +49,8 @@ private final class ProcessBootstrap {
         }
         
         let connection = NSXPCConnection(listenerEndpoint: endpoint)
+        connection.invalidationHandler = { handleHostDisconnection() }
+        connection.interruptionHandler = { handleHostDisconnection() }
         connection.remoteObjectInterface = NSXPCInterface(with: BootstrapPing.self)
         connection.resume()
         
@@ -54,7 +65,14 @@ private final class ProcessBootstrap {
         
         self.connection = connection
         GeckoRuntime.childMain(xpcConnection: xpcConnection, process: process)
-        (connection.remoteObjectProxyWithErrorHandler({ _ in }) as? BootstrapPing)?.ping()
+        let hostPID = XPCPeerProcessIdentifierFromNSXPC(connection)
+        if hostPID > 1 {
+            let monitor = DispatchSource.makeProcessSource(identifier: hostPID, eventMask: .exit, queue: .global())
+            monitor.setEventHandler { handleHostDisconnection() }
+            hostExitMonitor = monitor
+            monitor.resume()
+        }
+        (connection.remoteObjectProxyWithErrorHandler({ _ in handleHostDisconnection() }) as? BootstrapPing)?.ping()
     }
 }
 

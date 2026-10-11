@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Reuse the exact 0.16.0 released engine for browser-only stability builds."""
+"""Reuse a verified released or keyboard-fixed engine for browser-only builds."""
 import argparse
 import hashlib
+import json
+import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -15,6 +17,10 @@ BUILD = "63fb54d"
 ENGINE_TAG = "FIREFOX_157_0_RELEASE"
 SHA256 = "2950d9279dcdf51644419cf0aa5a6e76017fdf7322c485e958c01769c8e4e044"
 URL = "https://github.com/minh-ton/reynard-browser/releases/download/0.16.0/Reynard-TrollStore.tipa"
+KEYBOARD_COMMIT = "626195e58056f946f73d6fdc88cd8809fdc954c2"
+KEYBOARD_ARTIFACT = 11683403964
+KEYBOARD_RUN = 38072739578
+KEYBOARD_ARCHIVE_SHA256 = "7a9515df2431b668d9cbb22e37c8ca5360a00504081129795b7d544a8cd76ad7"
 PREFIX = "Payload/Reynard.app/"
 RUNTIME = PREFIX + "Frameworks/GeckoView.framework/Frameworks/"
 LIBRARIES = {"XUL", "libfreebl3.dylib", "liblgpllibs.dylib", "libmozinference.dylib",
@@ -22,22 +28,65 @@ LIBRARIES = {"XUL", "libfreebl3.dylib", "liblgpllibs.dylib", "libmozinference.dy
              "libgkcodecs.dylib", "libmozavcodec.dylib", "libnss3.dylib"}
 
 
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected:
+            redirected.remove_header("Authorization")
+        return redirected
+
+
+def keyboard_engine_package(local_archive=None):
+    archive_path = local_archive or ROOT / "prebuilt/keyboard-engine.zip"
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    if not local_archive:
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            raise RuntimeError("GITHUB_TOKEN is required to fetch the pinned workflow artifact")
+        endpoint = f"https://api.github.com/repos/txntixnz/reynard-browser/actions/artifacts/{KEYBOARD_ARTIFACT}"
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+        opener = urllib.request.build_opener(SafeRedirect())
+        with opener.open(urllib.request.Request(endpoint, headers=headers), timeout=60) as response:
+            metadata = json.load(response)
+        run = metadata["workflow_run"]
+        if (metadata["expired"] or metadata["name"] != "Reynard-TrollStore.tipa"
+                or metadata.get("digest") != "sha256:" + KEYBOARD_ARCHIVE_SHA256
+                or run["id"] != KEYBOARD_RUN or run["head_sha"] != KEYBOARD_COMMIT):
+            raise RuntimeError("Pinned keyboard engine artifact provenance mismatch")
+        with opener.open(urllib.request.Request(endpoint + "/zip", headers=headers), timeout=60) as response:
+            with archive_path.open("wb") as output:
+                shutil.copyfileobj(response, output)
+    with archive_path.open("rb") as stream:
+        if hashlib.file_digest(stream, "sha256").hexdigest() != KEYBOARD_ARCHIVE_SHA256:
+            raise RuntimeError("Keyboard engine artifact archive checksum mismatch")
+    package = archive_path.parent / "Reynard-keyboard-engine.tipa"
+    with zipfile.ZipFile(archive_path) as archive:
+        if archive.namelist() != ["Reynard-TrollStore.tipa"]:
+            raise RuntimeError("Unexpected files in the pinned keyboard artifact")
+        with archive.open("Reynard-TrollStore.tipa") as source, package.open("wb") as destination:
+            shutil.copyfileobj(source, destination)
+    return package
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--package", type=Path)
+    parser.add_argument("--keyboard-engine", action="store_true")
     args = parser.parse_args()
     # Refuse to pair this release with changed engine code/ABI.
-    subprocess.run(["git", "diff", "--exit-code", BUILD, "HEAD", "--", "engine", "patches"], cwd=ROOT, check=True)
+    engine_commit = KEYBOARD_COMMIT if args.keyboard_engine else BUILD
+    subprocess.run(["git", "diff", "--exit-code", engine_commit, "HEAD", "--", "engine", "patches"], cwd=ROOT, check=True)
+    subprocess.run(["git", "diff", "--exit-code", "HEAD", "--", "engine", "patches"], cwd=ROOT, check=True)
     if (ROOT / "engine/release.txt").read_text().strip() != ENGINE_TAG:
         raise RuntimeError("Engine release tag does not match the pinned package")
-    package = args.package or ROOT / "prebuilt/Reynard-0.16.0-TrollStore.tipa"
-    if not args.package:
+    package = keyboard_engine_package(args.package) if args.keyboard_engine else args.package or ROOT / "prebuilt/Reynard-0.16.0-TrollStore.tipa"
+    if not args.package and not args.keyboard_engine:
         package.parent.mkdir(parents=True, exist_ok=True)
         print("Downloading the pinned upstream 0.16.0 TrollStore engine", flush=True)
         urllib.request.urlretrieve(URL, package)
     with package.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    if digest != SHA256:
+    if not args.keyboard_engine and digest != SHA256:
         raise RuntimeError("Released package checksum mismatch; refusing engine reuse")
 
     dist = ROOT / "engine/firefox/obj-aarch64-apple-ios/dist"
@@ -45,7 +94,8 @@ def main():
     binary_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(package) as archive:
         info = plistlib.loads(archive.read(PREFIX + "Info.plist"))
-        if info["CFBundleShortVersionString"] != VERSION or info["CFBundleVersion"] != BUILD:
+        expected_build = KEYBOARD_COMMIT[:7] if args.keyboard_engine else BUILD
+        if info["CFBundleShortVersionString"] != VERSION or info["CFBundleVersion"] != expected_build:
             raise RuntimeError("Released package version/build mismatch")
         copied_libraries = set()
         for item in archive.infolist():

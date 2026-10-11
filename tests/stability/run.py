@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
+subprocess.run(["python3", str(ROOT / "tests/stability/test-engine-package.py")], check=True)
 TAB_SOURCE = ROOT / "browser/Reynard/Client/TabManagement/TabManagerImpl.swift"
 SESSION_SOURCE = ROOT / "browser/Reynard/Client/SessionManagement/SessionManager.swift"
 
@@ -23,8 +24,10 @@ def method(path, signature):
 session_methods = "\n".join(method(SESSION_SOURCE, sig) for sig in [
     "func activate(", "func deactivate(", "func setApplicationForeground(",
     "func applicationDidBecomeActive(",
+    "func beginBackgroundPageActivity(", "private func endBackgroundPageActivity(",
 ])
 tab_methods = "\n".join(method(TAB_SOURCE, sig) for sig in [
+    "func applicationWillResignActive(",
     "func applicationDidBecomeActive(",
     "private func restoredURL(", "private func displayedURL(",
     "private func hasDisplayURL(", "private func restorableSessionState(",
@@ -74,3 +77,5 @@ with tempfile.TemporaryDirectory(prefix="reynard-stability-") as tmp:
     swift_file.write_text(popup_source)
     subprocess.run(["swiftc", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
+
+subprocess.run(["python3", str(ROOT / "tests/stability/run-resume.py")], check=True)

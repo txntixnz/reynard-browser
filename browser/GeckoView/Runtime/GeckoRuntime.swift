@@ -21,6 +21,23 @@ public final class GeckoScreenOrientationController {
 }
 
 class GeckoRuntimeImpl: NSObject, SwiftGeckoViewRuntime {
+    private var backgroundProcessMonitors: [Int32: (UUID, DispatchSourceProcess)] = [:]
+
+    private func trackBackgroundProcess(pid: Int32, processType: String) {
+        // GPU processes stay governed by their foreground rendering lifecycle.
+        guard pid > 1, processType == "tab" || processType == "socket" else { return }
+        guard backgroundProcessMonitors[pid] == nil else { return }
+        let generation = UUID()
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+        backgroundProcessMonitors[pid] = (generation, source)
+        source.setEventHandler { [weak self] in
+            guard let self, backgroundProcessMonitors[pid]?.0 == generation else { return }
+            GeckoRuntimeBridge.removeBackgroundProcess(pid)
+            backgroundProcessMonitors.removeValue(forKey: pid)?.1.cancel()
+        }
+        source.resume()
+        GeckoRuntimeBridge.registerBackgroundProcess(pid)
+    }
     func runtimeDispatcher() -> any SwiftEventDispatcher {
         return GeckoEventDispatcherWrapper.runtimeInstance
     }
@@ -33,6 +50,9 @@ class GeckoRuntimeImpl: NSObject, SwiftGeckoViewRuntime {
     func childProcessDidStart(withPID pid: Int32, processType: String) {
         // Update jetsam limit for the child process
         updateJetsamControl(pid)
+        DispatchQueue.main.async { [weak self] in
+            self?.trackBackgroundProcess(pid: pid, processType: processType)
+        }
         
         NotificationCenter.default.post(
             name: Notification.Name("GeckoRuntime.ChildProcessDidStart"),
@@ -75,6 +95,10 @@ public class GeckoRuntime {
     public static var version: String {
         return GeckoRuntimeBridge.version()
     }
+
+    public static func beginBackgroundGrace() { GeckoRuntimeBridge.beginBackgroundGrace() }
+    public static var hasBackgroundGrace: Bool { GeckoRuntimeBridge.hasBackgroundGrace() }
+    public static func endBackgroundGrace() { GeckoRuntimeBridge.endBackgroundGrace() }
     
     public static func setLocale(acceptLanguages: String) {
         GeckoEventDispatcherWrapper.runtimeInstance.dispatch(

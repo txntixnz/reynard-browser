@@ -1,0 +1,52 @@
+name: iOS 16 Resume Test
+
+on:
+  push:
+    branches: [ios16-resume-fix]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ios16-resume-fix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Rebuild browser with confirmed keyboard engine
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.6'
+      - name: Run session regression checks
+        run: python3 tests/stability/run.py
+      - name: Install packaging dependencies
+        run: brew install ldid python@3.12
+      - name: Prepare verified keyboard-fixed Gecko engine
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          "$(brew --prefix python@3.12)/bin/python3.12" tools/release/prepare-prebuilt-gecko.py --keyboard-engine
+      - name: Initialize idevice support
+        run: git submodule update --init --recursive support/idevice
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - name: Build idevice support library
+        run: ./tools/development/build-idevice.sh
+      - name: Build patched browser
+        run: ./tools/release/build-app.sh --no-signing
+      - name: Package TrollStore TIPA
+        run: ./tools/release/create-ipa.sh --trollstore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Reynard-iOS16-Resume-Test-TrollStore
+          path: dist/Reynard-TrollStore.tipa
+          if-no-files-found: error

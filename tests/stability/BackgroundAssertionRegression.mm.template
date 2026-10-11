@@ -1,0 +1,53 @@
+#import <Foundation/Foundation.h>
+#import "GeckoRuntimeBridge.h"
+#import <dlfcn.h>
+#import <unistd.h>
+
+static NSMutableArray *created;
+static BOOL permitted = YES;
+@interface BKSProcessAssertion : NSObject
+@property BOOL valid;
+@property int pid;
+- (instancetype)initWithPID:(int)pid flags:(unsigned int)flags reason:(unsigned int)reason name:(NSString *)name withHandler:(void (^)(BOOL))handler;
+- (BOOL)isValid;
+- (void)invalidate;
+@end
+@implementation BKSProcessAssertion
+- (instancetype)initWithPID:(int)pid flags:(unsigned int)flags reason:(unsigned int)reason name:(NSString *)name withHandler:(void (^)(BOOL))handler {
+    self = [super init];
+    if (self) {
+        NSCAssert(flags == 5 && reason == 10004, @"Unexpected assertion scope");
+        self.pid = pid; self.valid = permitted;
+        [created addObject:self]; handler(permitted);
+    }
+    return self;
+}
+- (BOOL)isValid { return self.valid; }
+- (void)invalidate { self.valid = NO; }
+@end
+// BRIDGE_SOURCE
+
+int main() {
+    @autoreleasepool {
+        created = [NSMutableArray array];
+        [GeckoRuntimeBridge registerBackgroundProcess:0];
+        [GeckoRuntimeBridge registerBackgroundProcess:42001];
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        NSCAssert(created.count == 2 && [GeckoRuntimeBridge hasBackgroundGrace], @"Host and registered child must acquire activity");
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        NSCAssert(created.count == 2, @"Duplicate request must not acquire duplicate assertions");
+        [GeckoRuntimeBridge registerBackgroundProcess:42002];
+        NSCAssert(created.count == 3, @"New child must join existing background window");
+        [GeckoRuntimeBridge removeBackgroundProcess:42001];
+        NSCAssert(![(BKSProcessAssertion *)created[1] isValid], @"Exited child assertion must be released");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        for (BKSProcessAssertion *assertion in created) { NSCAssert(!assertion.valid, @"Cleanup must release every assertion"); }
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Grace must end");
+        permitted = NO;
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Denied API result must not report protection");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        NSLog(@"PASS: native assertion acquisition, child exit, denial and complete cleanup");
+    }
+    return 0;
+}

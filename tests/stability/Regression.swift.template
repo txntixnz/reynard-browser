@@ -22,6 +22,8 @@ final class MediaSession {
     func muteAudio(_ muted: Bool) { self.muted = muted }
 }
 final class GeckoSession {
+    var repaints = 0
+    func requestRepaint() { repaints += 1 }
     var opened = false
     var active = false
     var focused = false
@@ -55,6 +57,8 @@ final class Tab {
     let state = TabSessionState()
 }
 final class SessionManager {
+    private var livePageBackgroundTask: LivePageBackgroundTask?
+    private weak var backgroundPageSession: GeckoSession?
     private var sessionsRequestedActive: [ObjectIdentifier: GeckoSession] = [:]
     private var isApplicationForeground = true
     private(set) var isApplicationActive = true
@@ -66,6 +70,15 @@ final class SessionManager {
     func usesStoredNavigationHistory(for id: UUID) -> Bool { storedHistory }
     func clearExternalResponseRetention(for session: GeckoSession) {}
     // SESSION_METHODS
+}
+final class LivePageBackgroundTask {
+    static var latest: LivePageBackgroundTask?
+    static var allowed = true
+    var completion: (() -> Void)?
+    var stops = 0
+    init() { Self.latest = self }
+    func start(onEnd: @escaping () -> Void) -> Bool { completion = onEnd; return Self.allowed }
+    func stop() { stops += 1; let callback = completion; completion = nil; callback?() }
 }
 final class SystemMediaSession {
     var selected: GeckoSession?
@@ -173,6 +186,35 @@ manager.sessionManager.applicationDidBecomeActive()
 manager.applicationDidBecomeActive()
 check(liveSession.active && liveSession.focused, "foreground transition reactivates the existing page")
 check(valid.session === liveSession && liveSession.loads.count == 1, "warm resume preserves page and draft without reload")
+check(liveSession.repaints == 1, "warm resume requests a surface repaint")
+manager.applicationWillResignActive()
+let grace = LivePageBackgroundTask.latest!
+manager.sessionManager.setApplicationForeground(false)
+check(liveSession.active, "selected ChatGPT page stays active within the background window")
+grace.stop()
+check(!liveSession.active, "expiry deactivates the background ChatGPT page")
+manager.sessionManager.applicationDidBecomeActive()
+manager.applicationWillResignActive()
+let foregroundGrace = LivePageBackgroundTask.latest!
+manager.sessionManager.applicationDidBecomeActive()
+check(liveSession.active && foregroundGrace.stops == 1, "foreground return releases the window and keeps the page active")
+manager.applicationWillResignActive()
+let closingGrace = LivePageBackgroundTask.latest!
+manager.sessionManager.deactivate(liveSession)
+check(!liveSession.active && closingGrace.stops == 1, "closing or switching the retained tab ends its background window")
+manager.sessionManager.activate(liveSession)
+valid.url = "https://chatgpt.com.example.org"
+manager.applicationWillResignActive()
+manager.sessionManager.setApplicationForeground(false)
+check(!liveSession.active, "other sites do not acquire ChatGPT background activity")
+valid.url = conversation
+manager.sessionManager.applicationDidBecomeActive()
+LivePageBackgroundTask.allowed = false
+manager.applicationWillResignActive()
+manager.sessionManager.setApplicationForeground(false)
+check(!liveSession.active, "denied background activity falls back to normal suspension")
+LivePageBackgroundTask.allowed = true
+manager.sessionManager.applicationDidBecomeActive()
 manager.sessionManager.deactivate(liveSession)
 manager.applicationDidBecomeActive()
 check(liveSession.active, "activation repairs an open but inactive selected window")

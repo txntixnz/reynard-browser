@@ -17,6 +17,7 @@ extern "C" {
 
 xpc_connection_t _Nullable XPCConnectionFromNSXPC(
     NSXPCConnection *_Nonnull aConnection);
+int32_t XPCPeerProcessIdentifierFromNSXPC(NSXPCConnection *_Nonnull aConnection);
 
 #ifdef __cplusplus
 }

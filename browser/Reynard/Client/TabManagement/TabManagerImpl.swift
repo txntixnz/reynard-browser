@@ -85,6 +85,10 @@ final class TabManagerImplementation: NSObject, TabManager {
     
     func applicationWillResignActive() {
         sessionEligibleForSilentRecovery = selectedTab?.session
+        guard let tab = selectedTab,
+              let host = URL(string: tab.url ?? "")?.host?.lowercased(),
+              host == "chatgpt.com" || host == "chat.openai.com" else { return }
+        sessionManager.beginBackgroundPageActivity(for: tab.session)
     }
     
     func applicationDidBecomeActive() {
@@ -96,6 +100,7 @@ final class TabManagerImplementation: NSObject, TabManager {
             // Reassert activity after UIKit resumes the app. An open native
             // window alone does not guarantee the content is active again.
             sessionManager.activate(tab.session)
+            tab.session.requestRepaint()
         } else {
             selectTab(at: selectedTabIndex, mode: selectedTabMode)
         }
