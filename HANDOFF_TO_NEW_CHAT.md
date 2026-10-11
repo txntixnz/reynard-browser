@@ -39,6 +39,19 @@ can misbehave after deleting/retyping a word and take too long to select the
 correct word. Investigate native text-input synchronization separately from
 the fast resume build so its engine pin remains valid.
 
+`ios16-autocorrect-fix` builds on the resume candidate and removes synchronous
+inputDelegate change notifications from UIKit-initiated selection, insertion,
+replacement, deletion and composition requests. Apple's lower-level text-input
+guide reserves those notifications for external edits. Backspace and range
+replacement now schedule the same deferred selection reconciliation as insert.
+Touch selection and external cut/paste notifications remain intact, as do the
+Vietnamese/Korean edit paths and the confirmed attachment-menu tap routing.
+The native fixture executes these production methods and checks delete/retype,
+autocorrect replacement, composition, delegate feedback and external cut/paste.
+This requires a full Gecko compile and includes the resume changes; the fast
+resume candidate remains available independently. Prediction quality and
+latency still need a device comparison; do not promise Safari equivalence.
+
 User fork: https://github.com/txntixnz/reynard-browser
 Base commit: 5fd27d85581814094e1c901d53c8b3095aa11f3b (upstream 0.16.0)
 Target: iPhone 13 Pro Max, iOS 16.0, TrollStore, Dopamine.

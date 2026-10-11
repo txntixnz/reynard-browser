@@ -1,9 +1,9 @@
 diff --git a/widget/uikit/GeckoEditableSupport.mm b/widget/uikit/GeckoEditableSupport.mm
 new file mode 100644
-index 000000000000..24eeaa8bd3a6
+index 000000000000..eb54ce38c0a3
 --- /dev/null
 +++ b/widget/uikit/GeckoEditableSupport.mm
-@@ -0,0 +1,4273 @@
+@@ -0,0 +1,4261 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1369,9 +1369,7 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +
-+  [mEditable.mTextInputDelegate selectionWillChange:self];
 +  handler->SetSelectedRange(range);
-+  [mEditable.mTextInputDelegate selectionDidChange:self];
 +  if (mEditable.mSelectionDisplayInteraction == nil &&
 +      mEditable.mActiveSelectionHandle != GeckoSelectionHandleNone) {
 +    [NSObject
@@ -2266,11 +2264,8 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +
-+  [mEditable.mTextInputDelegate textWillChange:self];
-+  [mEditable.mTextInputDelegate selectionWillChange:self];
 +  handler->ReplaceRange(replacementRange, aText ?: @"");
-+  [mEditable.mTextInputDelegate textDidChange:self];
-+  [mEditable.mTextInputDelegate selectionDidChange:self];
++  [self scheduleEditSelectionUpdate];
 +}
 +
 +// Reports which edit actions should appear in the menu.
@@ -2476,11 +2471,7 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +
-+  [mEditable.mTextInputDelegate textWillChange:self];
-+  [mEditable.mTextInputDelegate selectionWillChange:self];
 +  handler->SetMarkedText(aMarkedText ?: @"", aSelectedRange);
-+  [mEditable.mTextInputDelegate textDidChange:self];
-+  [mEditable.mTextInputDelegate selectionDidChange:self];
 +  [self scheduleEditSelectionUpdate];
 +}
 +
@@ -2510,11 +2501,7 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +
-+  [mEditable.mTextInputDelegate textWillChange:self];
-+  [mEditable.mTextInputDelegate selectionWillChange:self];
 +  handler->UnmarkText();
-+  [mEditable.mTextInputDelegate textDidChange:self];
-+  [mEditable.mTextInputDelegate selectionDidChange:self];
 +  [self scheduleEditSelectionUpdate];
 +}
 +
@@ -2763,6 +2750,12 @@ index 000000000000..24eeaa8bd3a6
 +
 +// MARK: - UIKeyInput (Shared)
 +
++// UIKit-initiated edits must not echo synchronous inputDelegate notifications
++// back into the keyboard. They can reset autocorrection during delete/retype
++// or cause text queries before Gecko has applied the edit. External actions
++// (cut/paste and touch selection) retain their change notifications; ordinary
++// keyboard edits schedule selection reconciliation after the request returns.
++
 +- (void)insertText:(NSString*)aText {
 +  if (!mGeckoChild || mGeckoChild->Destroyed()) {
 +    return;
@@ -2782,14 +2775,10 @@ index 000000000000..24eeaa8bd3a6
 +  BOOL hasBuffer = [self ensureVietnameseBufferWithHandler:handler];
 +  mEditable.mCaretMenuActive = NO;
 +  if (!hasBuffer) {
-+    [mEditable.mTextInputDelegate textWillChange:self];
-+    [mEditable.mTextInputDelegate selectionWillChange:self];
 +    if (![self isKoreanInputMode] || ![self handleKoreanInsertText:aText
 +                                                       withHandler:handler]) {
 +      handler->InsertText(aText);
 +    }
-+    [mEditable.mTextInputDelegate textDidChange:self];
-+    [mEditable.mTextInputDelegate selectionDidChange:self];
 +    [self scheduleEditSelectionUpdate];
 +    return;
 +  }
@@ -2984,9 +2973,8 @@ index 000000000000..24eeaa8bd3a6
 +      return;
 +    }
 +
-+    [mEditable.mTextInputDelegate textWillChange:self];
 +    handler->ReplaceRange(deleteRange, @"");
-+    [mEditable.mTextInputDelegate textDidChange:self];
++    [self scheduleEditSelectionUpdate];
 +    return;
 +  }
 +
