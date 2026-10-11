@@ -1,3 +1,17 @@
+## Retry after engine API compilation failure (2026-10-12 user local time)
+
+Run 38154966140 / head 9055daef passed every regression and the complete iOS
+app compilation gate. Gecko failed about 25 minutes into compilation because
+ChildView::deleteBackward called TextInputHandler::HasMarkedText, which is private.
+The test double mistakenly exposed it publicly. Replaced that call with the
+existing public MarkedRange(outRange), which returns the same cached composition
+state without reading document text. No engine header or ABI change is needed.
+The fixture now declares HasMarkedText private and exposes MarkedRange publicly,
+matching the production header. Download/background/folder changes are retained.
+No completed engine artifact exists for this failed run. Compiler cache remains
+available, but the total retry duration is not guaranteed. User reports workflow
+completion/failure; do not monitor the entire engine build.
+
 ## Additional download requests in this retry
 
 User screenshot identifies **On My iPhone → Downloads**, not Reynard/Downloads.

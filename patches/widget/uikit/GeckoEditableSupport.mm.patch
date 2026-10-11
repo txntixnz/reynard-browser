@@ -1,9 +1,9 @@
 diff --git a/widget/uikit/GeckoEditableSupport.mm b/widget/uikit/GeckoEditableSupport.mm
 new file mode 100644
-index 000000000000..53fa5f99e9bd
+index 000000000000..bded6434e34e
 --- /dev/null
 +++ b/widget/uikit/GeckoEditableSupport.mm
-@@ -0,0 +1,4286 @@
+@@ -0,0 +1,4287 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -2978,7 +2978,8 @@ index 000000000000..53fa5f99e9bd
 +    // the entire prefix and reselecting it per key makes held deletion scale
 +    // with document length, and bypasses webpage Backspace event handling.
 +    // Keep the explicit range path for active IME/Korean composition only.
-+    if (!handler->HasMarkedText() && !mEditable.mKoreanComposedText &&
++    NSRange markedRange = NSMakeRange(NSNotFound, 0);
++    if (!handler->MarkedRange(markedRange) && !mEditable.mKoreanComposedText &&
 +        handler->HandleCommand(Command::DeleteCharBackward)) {
 +      [self scheduleEditSelectionUpdate];
 +      return;

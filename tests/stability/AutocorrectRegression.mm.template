@@ -40,7 +40,10 @@ struct TextInputHandler {
   NSRange marked = NSMakeRange(NSNotFound, 0);
   int backspaceEvents = 0;
   bool preventBackspace = false;
-  bool HasMarkedText() { return marked.location != NSNotFound; }
+ private:
+  // Match the actual engine header: UIKit callers cannot use this helper.
+  bool HasMarkedText() const { return marked.location != NSNotFound; }
+ public:
   bool HandleCommand(Command command) {
     assert(command == Command::DeleteCharBackward);
     backspaceEvents++;
@@ -63,7 +66,7 @@ struct TextInputHandler {
     ReplaceRange(selection, value); marked = NSMakeRange(start, value.length);
     selection = NSMakeRange(start + range.location, range.length); return true;
   }
-  bool MarkedRange(NSRange& range) { range = marked; return marked.location != NSNotFound; }
+  bool MarkedRange(NSRange& range) { range = HasMarkedText() ? marked : NSMakeRange(NSNotFound, 0); return HasMarkedText(); }
   bool UnmarkText() { marked = NSMakeRange(NSNotFound, 0); return true; }
   bool HandlePhysicalDeleteBackward(BOOL buffer, BOOL korean) { return false; }
   bool RunCommand(ContentCommand command, bool) { return true; }
