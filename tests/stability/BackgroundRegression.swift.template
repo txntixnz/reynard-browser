@@ -1,0 +1,69 @@
+import Foundation
+
+struct UIBackgroundTaskIdentifier: Equatable {
+    let value: Int
+    static let invalid = Self(value: -1)
+}
+final class UIApplication {
+    static let shared = UIApplication()
+    var handlers: [() -> Void] = []
+    var ended: [UIBackgroundTaskIdentifier] = []
+    var denied = false
+    var synchronousExpiry = false
+    func beginBackgroundTask(withName: String, expirationHandler: @escaping () -> Void) -> UIBackgroundTaskIdentifier {
+        handlers.append(expirationHandler)
+        if synchronousExpiry { expirationHandler() }
+        return denied ? .invalid : .init(value: handlers.count)
+    }
+    func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) { ended.append(identifier) }
+}
+enum GeckoRuntime {
+    static var hasBackgroundGrace = false
+    static var privateAllowed = false
+    static var begins = 0
+    static var ends = 0
+    static func beginBackgroundGrace() { begins += 1; hasBackgroundGrace = privateAllowed }
+    static func endBackgroundGrace() { ends += 1; hasBackgroundGrace = false }
+}
+var entitled = false
+func getEntitlementValue(_ key: String) -> Bool { entitled }
+func check(_ value: @autoclosure () -> Bool, _ message: String) {
+    precondition(value(), message); print("PASS: \(message)")
+}
+// BACKGROUND_SOURCE
+extension LivePageBackgroundTask {
+    var testDeadline: DispatchWorkItem? { deadline }
+}
+
+let app = UIApplication.shared
+let task = LivePageBackgroundTask()
+var completions = 0
+check(task.start { completions += 1 }, "UIKit-only background window starts")
+let oldExpiration = app.handlers.last!
+let oldDeadline = task.testDeadline!
+check(task.start { preconditionFailure("duplicate callback") }, "repeated start retains the existing window")
+check(app.handlers.count == 1 && LivePageBackgroundTask.maximumDuration == 180, "repeated starts do not renew the three-minute deadline")
+oldExpiration()
+check(completions == 1 && app.ended.count == 1, "UIKit expiry releases activity exactly once without private assertion")
+task.stop()
+check(completions == 1 && app.ended.count == 1, "repeated cleanup is harmless")
+entitled = true
+GeckoRuntime.privateAllowed = true
+check(task.start { completions += 1 }, "entitled build requests the private background assertion")
+let currentDeadline = task.testDeadline!
+oldExpiration(); oldDeadline.perform()
+check(completions == 1 && GeckoRuntime.hasBackgroundGrace, "stale callbacks cannot terminate a later background window")
+app.handlers.last!()
+check(completions == 1 && GeckoRuntime.hasBackgroundGrace, "valid private assertion survives UIKit expiry")
+currentDeadline.perform()
+check(completions == 2 && !GeckoRuntime.hasBackgroundGrace, "deadline releases private activity and completes the window")
+GeckoRuntime.privateAllowed = false
+app.denied = true
+check(!task.start { completions += 1 }, "denial by both APIs is reported")
+check(completions == 3, "denied request also clears the session retention")
+app.denied = false
+app.synchronousExpiry = true
+let endedBefore = app.ended.count
+check(!task.start { completions += 1 }, "synchronous expiry cannot leave an active window")
+check(completions == 4 && app.ended.count == endedBefore + 1, "synchronously returned UIKit task is released")
+print("Background lifecycle checks passed; device assertion grants remain untested.")

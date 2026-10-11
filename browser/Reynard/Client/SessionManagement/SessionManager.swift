@@ -22,6 +22,8 @@ final class SessionManager {
     private var isApplicationForeground = true
     private(set) var isApplicationActive = true
     private var sessionStateBackgroundTask = UIBackgroundTaskIdentifier.invalid
+    private var livePageBackgroundTask: LivePageBackgroundTask?
+    private weak var backgroundPageSession: GeckoSession?
     private var externalResponseReferenceCounts: [ObjectIdentifier: Int] = [:]
     private var deferredExternalResponseCleanups: [ObjectIdentifier: (
         session: GeckoSession,
@@ -106,11 +108,12 @@ final class SessionManager {
             return
         }
         sessionsRequestedActive[ObjectIdentifier(session)] = session
-        session.setActive(isApplicationForeground)
+        session.setActive(isApplicationForeground || backgroundPageSession === session)
         session.setFocused(true)
     }
     
     func deactivate(_ session: GeckoSession) {
+        if backgroundPageSession === session { endBackgroundPageActivity() }
         sessionsRequestedActive.removeValue(forKey: ObjectIdentifier(session))
         guard session.isOpen() else {
             return
@@ -127,7 +130,7 @@ final class SessionManager {
         }
         isApplicationForeground = isForeground
         for session in sessionsRequestedActive.values {
-            session.setActive(isForeground)
+            session.setActive(isForeground || backgroundPageSession === session)
         }
     }
     
@@ -141,6 +144,28 @@ final class SessionManager {
         isApplicationActive = true
         // Recover even if UIKit coalesced a foreground transition.
         setApplicationForeground(true)
+        endBackgroundPageActivity()
+    }
+
+    func beginBackgroundPageActivity(for session: GeckoSession) {
+        guard isApplicationActive, session.isOpen() else { return }
+        if backgroundPageSession === session { return }
+        endBackgroundPageActivity()
+        let task = LivePageBackgroundTask()
+        livePageBackgroundTask = task
+        backgroundPageSession = session
+        if !task.start(onEnd: { [weak self] in self?.endBackgroundPageActivity() }) {
+            endBackgroundPageActivity()
+        }
+    }
+
+    private func endBackgroundPageActivity() {
+        let task = livePageBackgroundTask
+        let session = backgroundPageSession
+        livePageBackgroundTask = nil
+        backgroundPageSession = nil
+        task?.stop()
+        if !isApplicationForeground { session?.setActive(false) }
     }
     
     // MARK: - Session State Persistence

@@ -13,6 +13,11 @@
 @interface GeckoRuntimeBridge : NSObject
 
 + (NSString *)version;
++ (void)registerBackgroundProcess:(int32_t)pid;
++ (void)removeBackgroundProcess:(int32_t)pid;
++ (void)beginBackgroundGrace;
++ (BOOL)hasBackgroundGrace;
++ (void)endBackgroundGrace;
 
 @end
 

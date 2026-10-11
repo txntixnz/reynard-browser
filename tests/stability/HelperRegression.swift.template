@@ -1,0 +1,59 @@
+import Foundation
+import Darwin
+
+private var exitCount = 0
+private func recordExit(_ code: Int32) { precondition(code == EXIT_SUCCESS); exitCount += 1 }
+private class NSExtensionContext { var inputItems: [Any] = [] }
+private class NSExtensionItem { var userInfo: [String: Any]? }
+private class NSXPCListenerEndpoint {}
+private class NSXPCInterface { init(with protocolType: Protocol) {} }
+private class NSXPCConnection {
+    static var latest: NSXPCConnection?
+    var invalidationHandler: (() -> Void)?
+    var interruptionHandler: (() -> Void)?
+    var proxyError: ((Error) -> Void)?
+    var remoteObjectInterface: NSXPCInterface?
+    init(listenerEndpoint: NSXPCListenerEndpoint) { Self.latest = self }
+    func resume() { precondition(invalidationHandler != nil && interruptionHandler != nil) }
+    func invalidate() { invalidationHandler?() }
+    func remoteObjectProxyWithErrorHandler(_ handler: @escaping (Error) -> Void) -> Any {
+        proxyError = handler; return Ping()
+    }
+}
+private final class Ping: NSObject, BootstrapPing { func ping() {} }
+private protocol GeckoProcessExtension {}
+private class Child: GeckoProcessExtension {}
+private enum GeckoRuntime {
+    static var launches = 0
+    static func childMain(xpcConnection: Int, process: GeckoProcessExtension) { launches += 1 }
+}
+private func XPCConnectionFromNSXPC(_ connection: NSXPCConnection) -> Int? { 1 }
+private func XPCPeerProcessIdentifierFromNSXPC(_ connection: NSXPCConnection) -> Int32 { 0 }
+// HELPER_SOURCE
+
+@main private struct Tests {
+    @MainActor static func main() throws {
+        let context = NSExtensionContext()
+        do {
+            try ProcessBootstrap.start(context: context, process: Child())
+            preconditionFailure("missing endpoint accepted")
+        } catch { precondition((error as NSError).code == 2) }
+        let item = NSExtensionItem()
+        item.userInfo = ["ReynardXPCListenerEndpoint": NSXPCListenerEndpoint()]
+        context.inputItems = [item]
+        try ProcessBootstrap.start(context: context, process: Child())
+        let connection = NSXPCConnection.latest!
+        precondition(GeckoRuntime.launches == 1 && exitCount == 0)
+        do {
+            try ProcessBootstrap.start(context: context, process: Child())
+            preconditionFailure("attached child reused")
+        } catch { precondition((error as NSError).code == 1) }
+        connection.invalidationHandler!()
+        precondition(exitCount == 1)
+        connection.interruptionHandler!()
+        precondition(exitCount == 2)
+        connection.proxyError!(NSError(domain: "test", code: 1))
+        precondition(exitCount == 3)
+        print("PASS: helper installs host-loss handlers before resuming and exits on invalidation, interruption, or ping failure")
+    }
+}

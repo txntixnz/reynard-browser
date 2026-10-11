@@ -461,6 +461,13 @@ public class GeckoSession {
             flushSessionState()
         }
     }
+
+    public func requestRepaint() {
+        guard let engineView, engineView.window != nil else { return }
+        // Invalidate the existing native surface without reloading the document
+        // or replacing its current response, form data, or scroll position.
+        engineView.setNeedsDisplay(engineView.bounds)
+    }
     
     public func setFocused(_ focused: Bool) {
         dispatcher.dispatch(type: "GeckoView:SetFocused", message: ["focused": focused])
