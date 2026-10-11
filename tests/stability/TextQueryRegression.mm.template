@@ -34,6 +34,7 @@ struct Widget { bool destroyed = false; bool Destroyed() { return destroyed; } }
 + (instancetype)rangeWithStart:(ChildViewTextPosition*)start end:(ChildViewTextPosition*)end {
   ChildViewTextRange *r = [self new]; r.startPosition = start; r.endPosition = end; return r;
 }
+@end
 @interface Delegate : NSObject
 @property int changes;
 - (void)selectionWillChange:(id)view;
