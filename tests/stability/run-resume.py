@@ -29,7 +29,10 @@ with tempfile.TemporaryDirectory(prefix="reynard-resume-") as tmp:
 
     bridge = (ROOT / "browser/GeckoView/Runtime/GeckoRuntimeBridge.mm").read_text()
     bridge = bridge[bridge.index("@protocol RYNBackgroundAssertion"):].replace("@MOZILLA_VERSION", '@"test"')
+    # macOS also ships the real private framework. Use a uniquely named test
+    # class so dlopen cannot replace/collide with the controlled API double.
+    bridge = bridge.replace('NSClassFromString(@"BKSProcessAssertion")', 'NSClassFromString(@"RYNTestBackgroundAssertion")')
     native_file = Path(tmp) / "assertions.mm"
-    native_file.write_text((ROOT / "tests/stability/BackgroundAssertionRegression.mm.template").read_text().replace("// BRIDGE_SOURCE", bridge))
+    native_file.write_text((ROOT / "tests/stability/BackgroundAssertionRegression.mm.template").read_text().replace("BKSProcessAssertion", "RYNTestBackgroundAssertion").replace("// BRIDGE_SOURCE", bridge))
     subprocess.run(["clang++", "-std=c++17", "-fobjc-arc", "-fblocks", "-framework", "Foundation", "-I", str(ROOT / "browser/GeckoView/Runtime"), str(native_file), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
