@@ -48,6 +48,7 @@ struct DownloadItemSnapshot {
     let downloadedBytes: Int64
     let bytesPerSecond: Int64
     let addedAt: Date
+    let destinationWarning: String?
 }
 
 final class DownloadStore: NSObject {
@@ -89,6 +90,8 @@ final class DownloadStore: NSObject {
         let fileSize: Int64
         let addedAt: Date
         var state: PersistedDownloadState?
+        let folderBookmark: Data?
+        let destinationWarning: String?
         
         var effectiveState: PersistedDownloadState {
             return state ?? .completed
@@ -201,6 +204,8 @@ final class DownloadStore: NSObject {
         return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
     
+    private let destination = DownloadDestination()
+    private var backgroundActivity: DownloadBackgroundActivity?
     private var activeDownloads: [Int: ActiveDownload] = [:]
     private var capturedDownloads: [String: CapturedDownload] = [:]
     private var persistedDownloads: [PersistedDownloadEntry] = []
@@ -235,6 +240,30 @@ final class DownloadStore: NSObject {
         stateQueue.sync {
             self.prepareStorageLocked()
             self.loadPersistedDownloadsLocked()
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            backgroundActivity = DownloadBackgroundActivity { [weak self] in
+                self?.runningDownloadProgress() ?? [:]
+            }
+        }
+    }
+
+    var downloadFolderName: String { stateQueue.sync { destination.folderName } }
+
+    func selectDownloadFolder(_ url: URL) throws {
+        try stateQueue.sync { try destination.select(url) }
+    }
+
+    func resetDownloadFolder() { stateQueue.sync { destination.reset() } }
+
+    // Avoid resolving old files/bookmarks on every progress notification.
+    private func runningDownloadProgress() -> [UUID: Int64] {
+        stateQueue.sync {
+            var progress: [UUID: Int64] = [:]
+            for active in activeDownloads.values where !active.isPaused { progress[active.id] = active.downloadedBytes }
+            for active in capturedDownloads.values where !active.isPaused { progress[active.id] = active.downloadedBytes }
+            return progress
         }
     }
     
@@ -465,10 +494,8 @@ final class DownloadStore: NSObject {
             }
             
             let entry = self.persistedDownloads.remove(at: index)
-            let fileURL = self.storage.downloadsDirectoryURL.appendingPathComponent(entry.relativePath, isDirectory: false)
-            
-            if self.fileManager.fileExists(atPath: fileURL.path) {
-                try? self.fileManager.removeItem(at: fileURL)
+            if entry.effectiveState == .completed {
+                self.destination.removeRecordedFile(relativePath: entry.relativePath, folderBookmark: entry.folderBookmark, fallbackFolder: self.storage.downloadsDirectoryURL)
             }
             
             self.savePersistedDownloadsLocked()
@@ -487,39 +514,12 @@ final class DownloadStore: NSObject {
             let removedIDs = Set(removedDownloads.map(\.id))
             self.persistedDownloads.removeAll { removedIDs.contains($0.id) }
             
-            let fileURLs: [URL]
-            if startDate == nil {
-                fileURLs = (try? self.fileManager.contentsOfDirectory(
-                    at: self.storage.downloadsDirectoryURL,
-                    includingPropertiesForKeys: nil
-                )) ?? []
-            } else {
-                fileURLs = removedDownloads.map {
-                    self.storage.downloadsDirectoryURL.appendingPathComponent($0.relativePath, isDirectory: false)
-                }
+            // Shared folders contain other apps' files. Only recorded,
+            // completed Reynard files belong to this operation.
+            for entry in removedDownloads where entry.effectiveState == .completed {
+                self.destination.removeRecordedFile(relativePath: entry.relativePath, folderBookmark: entry.folderBookmark, fallbackFolder: self.storage.downloadsDirectoryURL)
             }
-            
-            for fileURL in Set(fileURLs) {
-                try? self.fileManager.removeItem(at: fileURL)
-            }
-            
-            if !self.fileManager.fileExists(atPath: self.storage.downloadsDirectoryURL.path) {
-                try? self.fileManager.createDirectory(
-                    at: self.storage.downloadsDirectoryURL,
-                    withIntermediateDirectories: true
-                )
-            }
-            
-            for active in self.activeDownloads.values {
-                if let startDate, active.addedAt < startDate {
-                    continue
-                }
-                
-                if self.fileManager.fileExists(atPath: active.destinationURL.path) {
-                    try? self.fileManager.removeItem(at: active.destinationURL)
-                }
-            }
-            
+
             self.savePersistedDownloadsLocked()
             self.postDidChange()
         }
@@ -681,7 +681,8 @@ final class DownloadStore: NSObject {
                     totalBytes: active.expectedBytes,
                     downloadedBytes: active.downloadedBytes,
                     bytesPerSecond: active.bytesPerSecond,
-                    addedAt: active.addedAt
+                    addedAt: active.addedAt,
+                    destinationWarning: nil
                 )
             }
             .sorted { $0.addedAt > $1.addedAt }
@@ -702,7 +703,8 @@ final class DownloadStore: NSObject {
                     totalBytes: active.expectedBytes,
                     downloadedBytes: active.downloadedBytes,
                     bytesPerSecond: active.bytesPerSecond,
-                    addedAt: active.addedAt
+                    addedAt: active.addedAt,
+                    destinationWarning: nil
                 )
             }
         
@@ -715,7 +717,7 @@ final class DownloadStore: NSObject {
                     return nil
                 }
                 
-                let fileURL = storage.downloadsDirectoryURL.appendingPathComponent(entry.relativePath, isDirectory: false)
+                let fileURL = destination.fileURL(relativePath: entry.relativePath, folderBookmark: entry.folderBookmark, fallbackFolder: storage.downloadsDirectoryURL)
                 let isCompleted = entry.effectiveState == .completed
                 let itemState: DownloadItemSnapshot.State
                 if entry.effectiveState == .cancelled {
@@ -734,11 +736,12 @@ final class DownloadStore: NSObject {
                     mimeType: entry.mimeType,
                     state: itemState,
                     canPause: false,
-                    fileExists: isCompleted && fileManager.fileExists(atPath: fileURL.path),
+                    fileExists: isCompleted && fileURL.map { fileManager.fileExists(atPath: $0.path) } == true,
                     totalBytes: isCompleted ? entry.fileSize : nil,
                     downloadedBytes: isCompleted ? entry.fileSize : 0,
                     bytesPerSecond: 0,
-                    addedAt: entry.addedAt
+                    addedAt: entry.addedAt,
+                    destinationWarning: entry.destinationWarning
                 )
             }
         
@@ -831,36 +834,42 @@ final class DownloadStore: NSObject {
     private func makePersistedEntry(
         for download: ActiveDownload,
         state: PersistedDownloadState,
-        fileSize: Int64 = 0
+        fileSize: Int64 = 0,
+        savedFile: DownloadDestination.SavedFile? = nil
     ) -> PersistedDownloadEntry {
         return PersistedDownloadEntry(
             id: download.id,
-            fileName: download.fileName,
-            relativePath: download.destinationURL.lastPathComponent,
+            fileName: savedFile?.url.lastPathComponent ?? download.fileName,
+            relativePath: (savedFile?.url ?? download.destinationURL).lastPathComponent,
             sourceURLString: download.sourceURL.absoluteString,
             originalURLString: download.originalURL?.absoluteString,
             mimeType: download.mimeType,
             fileSize: fileSize,
             addedAt: download.addedAt,
-            state: state
+            state: state,
+            folderBookmark: savedFile?.folderBookmark,
+            destinationWarning: savedFile?.warning
         )
     }
     
     private func makePersistedEntry(
         for download: CapturedDownload,
         state: PersistedDownloadState,
-        fileSize: Int64 = 0
+        fileSize: Int64 = 0,
+        savedFile: DownloadDestination.SavedFile? = nil
     ) -> PersistedDownloadEntry {
         return PersistedDownloadEntry(
             id: download.id,
-            fileName: download.fileName,
-            relativePath: download.destinationURL.lastPathComponent,
+            fileName: savedFile?.url.lastPathComponent ?? download.fileName,
+            relativePath: (savedFile?.url ?? download.destinationURL).lastPathComponent,
             sourceURLString: download.sourceURL.absoluteString,
             originalURLString: nil,
             mimeType: download.mimeType,
             fileSize: fileSize,
             addedAt: download.addedAt,
-            state: state
+            state: state,
+            folderBookmark: savedFile?.folderBookmark,
+            destinationWarning: savedFile?.warning
         )
     }
     
@@ -1011,8 +1020,9 @@ final class DownloadStore: NSObject {
         }
         
         let fileSize = resolvedFileSize(at: active.destinationURL) ?? active.downloadedBytes
+        let savedFile = destination.saveCompletedFile(active.destinationURL)
         storePersistedEntryLocked(
-            makePersistedEntry(for: active, state: .completed, fileSize: fileSize)
+            makePersistedEntry(for: active, state: .completed, fileSize: fileSize, savedFile: savedFile)
         )
         hasUnviewedCompletedDownloads = true
         postDidChange()
@@ -1068,8 +1078,9 @@ final class DownloadStore: NSObject {
             try fileManager.moveItem(at: temporaryLocation, to: active.destinationURL)
             let fileSize = resolvedFileSize(at: active.destinationURL) ?? active.downloadedBytes
             
+            let savedFile = destination.saveCompletedFile(active.destinationURL)
             storePersistedEntryLocked(
-                makePersistedEntry(for: active, state: .completed, fileSize: fileSize)
+                makePersistedEntry(for: active, state: .completed, fileSize: fileSize, savedFile: savedFile)
             )
             hasUnviewedCompletedDownloads = true
         } catch {

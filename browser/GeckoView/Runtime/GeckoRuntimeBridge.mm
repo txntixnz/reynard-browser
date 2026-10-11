@@ -23,9 +23,14 @@
 - (void)invalidate;
 @end
 
+@interface GeckoRuntimeBridge ()
++ (void)beginBackgroundActivityForOwner:(NSString *)owner;
++ (void)endBackgroundActivityForOwner:(NSString *)owner;
+@end
+
 static NSMutableSet<NSNumber *> *sBackgroundProcesses;
 static NSMutableDictionary<NSNumber *, id<RYNBackgroundAssertion>> *sBackgroundAssertions;
-static BOOL sBackgroundGraceRequested;
+static NSMutableSet<NSString *> *sBackgroundOwners;
 
 static void AcquireBackgroundAssertion(int32_t pid) {
     static dispatch_once_t once;
@@ -44,7 +49,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     // PreventTaskSuspend | AllowIdleSleep. Do not request foreground GPU/UI
     // priority or keep the screen awake while continuing the page's network work.
     id<RYNBackgroundAssertion> assertion = [(id<RYNBackgroundAssertion>)[assertionClass alloc]
-        initWithPID:pid flags:5 reason:10004 name:@"Reynard live page grace"
+        initWithPID:pid flags:5 reason:10004 name:@"Reynard network activity"
         withHandler:^(BOOL acquired) {
             NSLog(@"Reynard: background assertion PID %d %@", pid,
                   acquired ? @"acquired" : @"denied");
@@ -63,7 +68,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     if (pid <= 1) { return; }
     if (!sBackgroundProcesses) { sBackgroundProcesses = [NSMutableSet set]; }
     [sBackgroundProcesses addObject:@(pid)];
-    if (sBackgroundGraceRequested) { AcquireBackgroundAssertion(pid); }
+    if (sBackgroundOwners.count > 0) { AcquireBackgroundAssertion(pid); }
 }
 
 + (void)removeBackgroundProcess:(int32_t)pid {
@@ -74,8 +79,17 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 }
 
 + (void)beginBackgroundGrace {
+    [self beginBackgroundActivityForOwner:@"live-page"];
+}
+
++ (void)beginBackgroundDownloadGrace {
+    [self beginBackgroundActivityForOwner:@"downloads"];
+}
+
++ (void)beginBackgroundActivityForOwner:(NSString *)owner {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
-    sBackgroundGraceRequested = YES;
+    if (!sBackgroundOwners) { sBackgroundOwners = [NSMutableSet set]; }
+    [sBackgroundOwners addObject:owner];
     if (!sBackgroundAssertions) { sBackgroundAssertions = [NSMutableDictionary dictionary]; }
     AcquireBackgroundAssertion(getpid());
     for (NSNumber *pid in sBackgroundProcesses) {
@@ -85,12 +99,26 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 
 + (BOOL)hasBackgroundGrace {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
-    return sBackgroundGraceRequested && [sBackgroundAssertions[@(getpid())] isValid];
+    return [sBackgroundOwners containsObject:@"live-page"] && [sBackgroundAssertions[@(getpid())] isValid];
 }
 
 + (void)endBackgroundGrace {
+    [self endBackgroundActivityForOwner:@"live-page"];
+}
+
++ (BOOL)hasBackgroundDownloadGrace {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
-    sBackgroundGraceRequested = NO;
+    return [sBackgroundOwners containsObject:@"downloads"] && [sBackgroundAssertions[@(getpid())] isValid];
+}
+
++ (void)endBackgroundDownloadGrace {
+    [self endBackgroundActivityForOwner:@"downloads"];
+}
+
++ (void)endBackgroundActivityForOwner:(NSString *)owner {
+    NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
+    [sBackgroundOwners removeObject:owner];
+    if (sBackgroundOwners.count > 0) { return; }
     for (id<RYNBackgroundAssertion> assertion in sBackgroundAssertions.allValues) {
         [assertion invalidate];
     }

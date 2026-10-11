@@ -11,6 +11,7 @@ struct GeneralSettingsSection {
     enum Row: CaseIterable {
         case addons
         case browsing
+        case downloads
         case search
         case newTab
         case homepage
@@ -32,6 +33,8 @@ struct GeneralSettingsSection {
             return SettingsViewUtils.disclosureCell(title: NSLocalizedString("Add-ons", comment: ""))
         case .browsing:
             return SettingsViewUtils.disclosureCell(title: NSLocalizedString("Browsing", comment: ""))
+        case .downloads:
+            return SettingsViewUtils.disclosureCell(title: NSLocalizedString("Downloads", comment: ""))
         case .search:
             return SettingsViewUtils.disclosureCell(title: NSLocalizedString("Search", comment: ""))
         case .newTab:
@@ -56,6 +59,8 @@ struct GeneralSettingsSection {
             destination = AddonsPreferencesViewController()
         case .browsing:
             destination = BrowsingPreferencesViewController()
+        case .downloads:
+            destination = DownloadsPreferencesViewController()
         case .search:
             destination = SearchPreferencesViewController()
         case .newTab:

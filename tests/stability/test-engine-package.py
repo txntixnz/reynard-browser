@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 import urllib.request
@@ -17,6 +18,27 @@ engine = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(engine)
 
 class EnginePackageTests(unittest.TestCase):
+    def test_compile_check_allows_only_editor_implementation_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            native = root / "patches/widget/uikit/GeckoEditableSupport.mm.patch"
+            header = native.with_name("GeckoEditableSupport.h.patch")
+            native.parent.mkdir(parents=True)
+            native.write_text("baseline implementation")
+            header.write_text("baseline ABI")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.org", "commit", "-qm", "Baseline"], cwd=root, check=True)
+            base = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+            native.write_text("changed implementation")
+            with patch.object(engine, "ROOT", root):
+                engine.verify_engine_sources(base, compile_check_only=True)
+                with self.assertRaisesRegex(RuntimeError, "source/ABI"):
+                    engine.verify_engine_sources(base)
+                header.write_text("changed ABI")
+                with self.assertRaisesRegex(RuntimeError, "source/ABI"):
+                    engine.verify_engine_sources(base, compile_check_only=True)
+
     def test_archive_integrity_and_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "engine.zip"

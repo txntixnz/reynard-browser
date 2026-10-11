@@ -60,6 +60,7 @@ final class SessionManager {
     private var livePageBackgroundTask: LivePageBackgroundTask?
     private weak var backgroundPageSession: GeckoSession?
     private var sessionsRequestedActive: [ObjectIdentifier: GeckoSession] = [:]
+    var externalResponseReferenceCounts: [ObjectIdentifier: Int] = [:]
     private var isApplicationForeground = true
     private(set) var isApplicationActive = true
     var isForeground: Bool { isApplicationForeground }
@@ -219,6 +220,11 @@ manager.sessionManager.deactivate(liveSession)
 manager.applicationDidBecomeActive()
 check(liveSession.active, "activation repairs an open but inactive selected window")
 
+manager.sessionManager.externalResponseReferenceCounts[ObjectIdentifier(liveSession)] = 1
+manager.sessionManager.setApplicationForeground(false)
+check(liveSession.active, "selected download origin stays active while response is retained")
+manager.sessionManager.externalResponseReferenceCounts.removeAll()
+manager.sessionManager.applicationDidBecomeActive()
 manager.sessionManager.setApplicationForeground(false)
 liveSession.opened = false
 manager.recover()

@@ -1,0 +1,132 @@
+// Actual production query/update methods with counters and a real run loop.
+#import <Foundation/Foundation.h>
+#include <algorithm>
+#include <cassert>
+#include <cstdio>
+
+struct nsString { NSUInteger length = 0; NSUInteger Length() const { return length; } };
+namespace widget {
+struct TextInputHandler {
+  NSUInteger length = 20000;
+  NSUInteger maximumQueryLength = 0;
+  int queries = 0;
+  bool TextInRange(NSRange range, nsString& result) {
+    queries++; maximumQueryLength = std::max(maximumQueryLength, range.length);
+    result.length = range.location <= length ? std::min(range.length, length - range.location) : 0;
+    return true;
+  }
+};
+}
+struct Widget { bool destroyed = false; bool Destroyed() { return destroyed; } };
+@interface ChildViewTextPosition : NSObject
+@property NSUInteger offset;
++ (instancetype)positionWithOffset:(NSUInteger)offset;
+@end
+@implementation ChildViewTextPosition
++ (instancetype)positionWithOffset:(NSUInteger)offset { ChildViewTextPosition *p = [self new]; p.offset = offset; return p; }
+@end
+@interface ChildViewTextRange : NSObject
+@property(strong) ChildViewTextPosition *startPosition;
+@property(strong) ChildViewTextPosition *endPosition;
++ (instancetype)rangeWithStart:(ChildViewTextPosition*)start end:(ChildViewTextPosition*)end;
+@end
+@implementation ChildViewTextRange
++ (instancetype)rangeWithStart:(ChildViewTextPosition*)start end:(ChildViewTextPosition*)end {
+  ChildViewTextRange *r = [self new]; r.startPosition = start; r.endPosition = end; return r;
+}
+@interface Delegate : NSObject
+@property int changes;
+- (void)selectionWillChange:(id)view;
+- (void)selectionDidChange:(id)view;
+@end
+@implementation Delegate
+- (void)selectionWillChange:(id)view {}
+- (void)selectionDidChange:(id)view { self.changes++; }
+@end
+struct Editable {
+  __strong Delegate *mTextInputDelegate;
+  __strong id mSelectionDisplayInteraction;
+  __strong NSString *mVietnameseBufferText;
+  BOOL mPendingCaretMenu = NO;
+  BOOL mPendingSelectionGeometryRefresh = NO;
+  NSUInteger mPreTapCaretOffset = 0;
+};
+@interface ChildView : NSObject {
+@public
+  Editable mEditable;
+  Widget widget;
+  Widget *mGeckoChild;
+  widget::TextInputHandler handler;
+  int lengthQueries;
+  int refreshes;
+  int legacyUpdates;
+  BOOL buffer;
+}
+- (widget::TextInputHandler*)textHandler;
+- (BOOL)hasVietnameseBuffer;
+- (BOOL)tryClearSyncedVietnameseBufferWithHandler:(widget::TextInputHandler*)handler;
+- (NSUInteger)documentLength;
+- (NSRange)selectedRange;
+- (void)refreshSelectionUI;
+- (void)updateEditMenu;
+- (void)updateLegacyGrabbers;
+- (void)resolveCaretMenuIfPending;
+- (ChildViewTextRange*)textRangeForRange:(NSRange)range;
+- (BOOL)hasText;
+- (void)scheduleEditSelectionUpdate;
+- (void)applyEditSelectionUpdate;
+- (void)selectionGeometryChanged;
+- (void)applySelectionGeometryChange;
+@end
+@implementation ChildView
+- (widget::TextInputHandler*)textHandler { return mGeckoChild && !mGeckoChild->Destroyed() ? &handler : nullptr; }
+- (BOOL)hasVietnameseBuffer { return buffer; }
+- (BOOL)tryClearSyncedVietnameseBufferWithHandler:(widget::TextInputHandler*)handler { return YES; }
+- (NSUInteger)documentLength { lengthQueries++; return handler.length; }
+- (NSRange)selectedRange { return NSMakeRange(0, 0); }
+- (void)refreshSelectionUI { refreshes++; }
+- (void)updateEditMenu {}
+- (void)updateLegacyGrabbers { legacyUpdates++; }
+- (void)resolveCaretMenuIfPending {}
+// QUERY_METHODS
+@end
+static void pump() { [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]]; }
+int main() {
+  @autoreleasepool {
+    ChildView *view = [ChildView new]; view->mGeckoChild = &view->widget;
+    assert([view hasText] && view->handler.maximumQueryLength == 1 && view->lengthQueries == 0);
+    view->handler.length = 0; assert(![view hasText]);
+    view->buffer = YES; view->mEditable.mVietnameseBufferText = @"word";
+    int queries = view->handler.queries;
+    assert([view hasText] && view->handler.queries == queries);
+    view->buffer = NO; view->handler.length = 20000;
+    ChildViewTextRange *r = [view textRangeForRange:NSMakeRange(100, 20)];
+    assert(r.startPosition.offset == 100 && r.endPosition.offset == 120 && view->lengthQueries == 1);
+    r = [view textRangeForRange:NSMakeRange(19999, NSUIntegerMax)];
+    assert(r.startPosition.offset == 19999 && r.endPosition.offset == 20000 && view->lengthQueries == 2);
+    r = [view textRangeForRange:NSMakeRange(30000, 10)];
+    assert(r.startPosition.offset == 20000 && r.endPosition.offset == 20000);
+    assert([view textRangeForRange:NSMakeRange(NSNotFound, 0)] == nil);
+    std::puts("PASS: availability queries read one code unit; range conversion uses one length snapshot and safely clamps overflowing ranges");
+    Delegate *delegate = [Delegate new]; view->mEditable.mTextInputDelegate = delegate;
+    view->mEditable.mSelectionDisplayInteraction = [NSObject new];
+    for (int i = 0; i < 100; i++) { [view scheduleEditSelectionUpdate]; }
+    assert(view->refreshes == 0 && delegate.changes == 0);
+    pump(); assert(view->refreshes == 1 && delegate.changes == 1);
+    for (int i = 0; i < 100; i++) { [view selectionGeometryChanged]; }
+    assert(view->refreshes == 1);
+    pump(); assert(view->refreshes == 2 && delegate.changes == 2);
+    view->mEditable.mSelectionDisplayInteraction = nil;
+    for (int i = 0; i < 100; i++) { [view selectionGeometryChanged]; }
+    pump(); assert(delegate.changes == 3 && view->legacyUpdates == 1);
+    std::puts("PASS: burst edits and geometry notices coalesce; iOS 16 legacy selection notification remains available");
+    view->mEditable.mSelectionDisplayInteraction = [NSObject new];
+    view->mEditable.mTextInputDelegate = nil;
+    [view scheduleEditSelectionUpdate]; assert(view->refreshes == 3);
+    view->mEditable.mTextInputDelegate = delegate;
+    [view scheduleEditSelectionUpdate]; view->widget.destroyed = true;
+    pump(); assert(view->refreshes == 3 && delegate.changes == 3 && ![view hasText]);
+    std::puts("PASS: selection UI without an input delegate is preserved; delayed callbacks ignore destroyed editors");
+  }
+  return 0;
+}

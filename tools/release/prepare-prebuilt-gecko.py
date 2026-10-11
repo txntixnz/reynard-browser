@@ -68,15 +68,36 @@ def keyboard_engine_package(local_archive=None):
     return package
 
 
+def verify_engine_sources(engine_commit, compile_check_only=False):
+    paths = ["engine", "patches"]
+    if compile_check_only:
+        # The check can use older implementation code, never older bridge ABI.
+        # This exact .mm-only change is permitted solely for an app compile.
+        paths.append(":(exclude)patches/widget/uikit/GeckoEditableSupport.mm.patch")
+    for revisions in ([engine_commit, "HEAD"], ["HEAD"]):
+        result = subprocess.run(["git", "diff", "--quiet", *revisions, "--", *paths], cwd=ROOT)
+        if result.returncode:
+            raise RuntimeError("Engine source/ABI differs from the pinned package")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--package", type=Path)
     parser.add_argument("--keyboard-engine", action="store_true")
+    parser.add_argument("--compile-check-only", action="store_true",
+                        help="Allow editor implementation changes for app compilation; packaging is disabled")
     args = parser.parse_args()
     # Refuse to pair this release with changed engine code/ABI.
     engine_commit = KEYBOARD_COMMIT if args.keyboard_engine else BUILD
-    subprocess.run(["git", "diff", "--exit-code", engine_commit, "HEAD", "--", "engine", "patches"], cwd=ROOT, check=True)
-    subprocess.run(["git", "diff", "--exit-code", "HEAD", "--", "engine", "patches"], cwd=ROOT, check=True)
+    if args.compile_check_only and not args.keyboard_engine:
+        parser.error("--compile-check-only requires --keyboard-engine")
+    verify_engine_sources(engine_commit, args.compile_check_only)
+    marker = ROOT / "prebuilt/COMPILE_CHECK_ONLY"
+    if args.compile_check_only:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("This engine is for app compilation only; do not package.\n")
+    elif marker.exists():
+        marker.unlink()
     if (ROOT / "engine/release.txt").read_text().strip() != ENGINE_TAG:
         raise RuntimeError("Engine release tag does not match the pinned package")
     package = keyboard_engine_package(args.package) if args.keyboard_engine else args.package or ROOT / "prebuilt/Reynard-0.16.0-TrollStore.tipa"

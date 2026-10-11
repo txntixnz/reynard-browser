@@ -31,12 +31,27 @@ static int delegateCalls;
 - (void)selectionDidChange:(id)view { delegateCalls++; }
 @end
 enum GeckoSelectionHandle { GeckoSelectionHandleNone, GeckoSelectionHandleStart };
-enum Command { eContentCommandCut, eContentCommandPaste };
+enum ContentCommand { eContentCommandCut, eContentCommandPaste };
+enum class Command { DeleteCharBackward };
 namespace widget {
 struct TextInputHandler {
   __strong NSMutableString *text = [NSMutableString stringWithString:@"hello teh"];
   NSRange selection = NSMakeRange(9, 0);
   NSRange marked = NSMakeRange(NSNotFound, 0);
+  int backspaceEvents = 0;
+  bool preventBackspace = false;
+  bool HasMarkedText() { return marked.location != NSNotFound; }
+  bool HandleCommand(Command command) {
+    assert(command == Command::DeleteCharBackward);
+    backspaceEvents++;
+    if (preventBackspace) { return true; }
+    NSRange range = selection;
+    if (!range.length) {
+      if (!range.location) { return true; }
+      range = [text rangeOfComposedCharacterSequenceAtIndex:range.location - 1];
+    }
+    return ReplaceRange(range, @"");
+  }
   bool SetSelectedRange(NSRange range) { selection = range; return true; }
   bool ReplaceRange(NSRange range, NSString *value) {
     [text replaceCharactersInRange:range withString:value];
@@ -51,7 +66,7 @@ struct TextInputHandler {
   bool MarkedRange(NSRange& range) { range = marked; return marked.location != NSNotFound; }
   bool UnmarkText() { marked = NSMakeRange(NSNotFound, 0); return true; }
   bool HandlePhysicalDeleteBackward(BOOL buffer, BOOL korean) { return false; }
-  bool RunCommand(Command command, bool) { return true; }
+  bool RunCommand(ContentCommand command, bool) { return true; }
 };
 }
 struct Widget {
@@ -84,6 +99,7 @@ struct Editable {
   Widget *mGeckoChild;
   Editable mEditable;
   int scheduled;
+  int prefixQueries;
 }
 - (widget::TextInputHandler*)textHandler;
 - (NSRange)rangeForTextRange:(UITextRange*)range;
@@ -128,6 +144,7 @@ struct Editable {
 - (void)replaceVietnameseBufferRange:(NSRange)range withText:(NSString*)text {}
 - (NSRange)vietnameseBufferDeleteBackwardRange { return NSMakeRange(NSNotFound, 0); }
 - (NSRange)deleteBackwardRangeWithHandler:(widget::TextInputHandler*)handler {
+  prefixQueries++;
   NSRange range = handler->selection;
   return range.length ? range : range.location ? NSMakeRange(range.location - 1, 1) : NSMakeRange(NSNotFound, 0);
 }
@@ -157,13 +174,35 @@ int main() {
     [view unmarkText];
     assert(view->scheduled == 7 && view->widget.handler.marked.location == NSNotFound);
     assert(delegateCalls == 0);
+    assert(view->prefixQueries == 0 && view->widget.handler.backspaceEvents == 2);
     std::puts("PASS: delete/retype, replacement and composition do not synchronously reset the input delegate; edits schedule selection reconciliation");
     [view cut:nil]; [view paste:nil];
     assert(delegateCalls == 8);
     std::puts("PASS: external cut/paste still notify the input delegate");
+    auto& handler = view->widget.handler;
+    handler.text = [NSMutableString stringWithCapacity:20000];
+    for (int i = 0; i < 20000; i++) { [handler.text appendString:@"a"]; }
+    handler.selection = NSMakeRange(handler.text.length, 0);
+    for (int i = 0; i < 20000; i++) { [view deleteBackward]; }
+    assert(handler.text.length == 0 && view->prefixQueries == 0);
+    std::puts("PASS: sustained deletion of long text does not query the document prefix");
+    handler.text = [NSMutableString stringWithString:@"A👨‍👩‍👧‍👦e\u0301🇩🇪"];
+    handler.selection = NSMakeRange(handler.text.length, 0);
+    [view deleteBackward]; [view deleteBackward]; [view deleteBackward];
+    assert([handler.text isEqualToString:@"A"]);
+    handler.preventBackspace = true;
+    [view deleteBackward];
+    assert([handler.text isEqualToString:@"A"] && view->prefixQueries == 0);
+    std::puts("PASS: normal Backspace preserves grapheme deletion and respects consumed key events in the editor double");
+    handler.preventBackspace = false;
+    handler.marked = NSMakeRange(0, 1);
+    [view deleteBackward];
+    assert(handler.text.length == 0 && view->prefixQueries == 1);
+    std::puts("PASS: active marked-text composition retains the existing explicit-range path");
+    int scheduledBefore = view->scheduled;
     view->widget.destroyed = true;
     [view insertText:@"lost"]; [view deleteBackward];
-    assert(view->scheduled == 9);
+    assert(view->scheduled == scheduledBefore);
     std::puts("PASS: destroyed editors ignore keyboard edits");
   }
   return 0;

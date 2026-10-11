@@ -1,4 +1,66 @@
+## Additional download requests in this retry
+
+User screenshot identifies **On My iPhone → Downloads**, not Reynard/Downloads.
+Added Settings → General → Downloads → Save Downloads To using the native folder
+picker and persistent directory bookmarks. User chooses that folder once; no
+hardcoded Safari container. Existing entries keep their original folder bookmark;
+legacy entries remain in Reynard. Export preserves filename collisions, falls back
+to Reynard with a visible warning if folder access is lost, and clearing/deleting
+operates only on tracked completed files (never other Safari files or active data).
+Local exports use a move to avoid copying large downloads.
+
+DownloadBackgroundActivity protects host + registered content/socket processes on
+entitled TrollStore installs, with a finite UIKit fallback. It keeps the original
+Gecko authenticated/POST/blob response rather than re-requesting a URL. Separate
+page/download assertion owners prevent either activity ending from cancelling the
+other. Only running (not paused) downloads hold activity; complete/cancel/foreground
+release it. Ten minutes without progress ends protection until foreground return.
+Force quitting still stops live Gecko transfers. Real iOS assertion grants and
+provider folder access need the user's device test; CI exercises production policy
+and actual Foundation destination/bookmark/collision/removal behavior on macOS.
+
 # Reynard iOS 16 stability test 1
+
+## Latest failure and deletion report (2026-10-11 afternoon)
+
+Combined run 38134691362 compiled Gecko successfully, then failed in the app
+archive: ExtensionBridge.mm directly called xpc_connection_get_pid, which the
+iOS SDK marks unavailable. Resume-only run 38134511268 failed on the same line.
+This was a candidate implementation error. The bridge now runtime-resolves
+the private symbol and returns zero if absent; XPC host-loss handlers remain.
+
+User also reports very slow/buggy deletion of long sentences. The previous
+ordinary virtual Backspace queried the entire text prefix, selected the last
+grapheme range and sent a separate deletion command for each key. The updated
+ordinary path invokes Gecko's existing DeleteCharBackward event handling,
+which also respects content-consumed Backspace events. Active marked text,
+Vietnamese buffers and Korean composition retain their explicit-range handling.
+Regression fixtures cover repeated deletion of 20,000 characters without prefix
+queries, selection deletion, Unicode graphemes in the editor double, consumed
+events and marked-text fallback. Actual iPhone responsiveness is unverified.
+
+The combined workflow now compiles the complete iOS app before the long Gecko
+job. Compile-only engine preparation allows only changes to the editor .mm
+implementation; ABI/header changes remain rejected. Packaging refuses the
+compile-only engine marker. The final job builds and packages the changed
+engine on a separate runner. Device-confirmed keyboard routing is preserved.
+
+User asked for an optimization review before launching another workflow.
+Additional targeted changes: hasText reads only one UTF-16 code unit instead
+of copying the whole document; range conversion obtains one document-length
+snapshot instead of two, clamps without overflow and rejects NSNotFound.
+Selection UI refresh for ordinary edits/geometry is deferred and coalesced;
+without an input delegate the existing immediate visual update is preserved.
+Actual production query/update fixtures count queries and run callbacks through
+Foundation's real run loop, including legacy iOS 16 notifications, Unicode,
+overflow and destroyed-editor handling. This does not simulate device timing.
+
+The full candidate build also preserves bin/include as a dereferenced engine
+archive immediately after successful Gecko compilation, with engine/patch tree,
+Firefox commit and variant metadata, retained seven days. A later app/package
+failure therefore need not discard a completed multi-hour engine build. This
+recovery archive is not the installable TIPA; future reuse must verify metadata
+and artifact integrity. No complete failed-run engine was recoverable this time.
 
 ## Current device baseline and next candidate (2026-10-11)
 

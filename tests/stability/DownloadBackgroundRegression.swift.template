@@ -1,0 +1,90 @@
+import Foundation
+
+struct UIBackgroundTaskIdentifier: Equatable {
+    let value: Int
+    static let invalid = Self(value: -1)
+}
+final class UIApplication {
+    enum State { case active, background }
+    static let shared = UIApplication()
+    static let didEnterBackgroundNotification = Notification.Name("background")
+    static let didBecomeActiveNotification = Notification.Name("active")
+    var applicationState = State.active
+    var handlers: [() -> Void] = []
+    var ended: [UIBackgroundTaskIdentifier] = []
+    var denied = false
+    var synchronousExpiry = false
+    func beginBackgroundTask(withName: String, expirationHandler: @escaping () -> Void) -> UIBackgroundTaskIdentifier {
+        handlers.append(expirationHandler)
+        if synchronousExpiry { expirationHandler() }
+        return denied ? .invalid : .init(value: handlers.count)
+    }
+    func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) { ended.append(identifier) }
+}
+extension Notification.Name { static let downloadStoreDidChange = Self("downloads") }
+enum GeckoRuntime {
+    static var hasBackgroundDownloadGrace = false
+    static var allowed = true
+    static var begins = 0
+    static var ends = 0
+    static func beginBackgroundDownloadGrace() { begins += 1; hasBackgroundDownloadGrace = allowed }
+    static func endBackgroundDownloadGrace() { ends += 1; hasBackgroundDownloadGrace = false }
+}
+var entitled = true
+func getEntitlementValue(_ key: String) -> Bool { entitled }
+func check(_ value: @autoclosure () -> Bool, _ message: String) { precondition(value(), message); print("PASS: \(message)") }
+// BACKGROUND_SOURCE
+extension DownloadBackgroundActivity {
+    func simulateIdle() { lastProgressAt = ProcessInfo.processInfo.systemUptime - Self.idleTimeout - 1 }
+}
+
+let app = UIApplication.shared
+let id = UUID()
+var progress: [UUID: Int64] = [id: 0]
+let activity = DownloadBackgroundActivity { progress }
+check(app.handlers.isEmpty, "foreground download does not request background activity")
+app.applicationState = .background
+NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+check(GeckoRuntime.hasBackgroundDownloadGrace && app.handlers.count == 1, "background transfer acquires activity")
+let staleExpiry = app.handlers.last!
+staleExpiry()
+check(GeckoRuntime.hasBackgroundDownloadGrace && app.ended.count == 1, "download continues after UIKit expires when private grant is valid")
+progress[id] = 1
+activity.checkProgress()
+check(app.handlers.count == 1, "progress does not repeatedly renew activity")
+progress = [:]
+NotificationCenter.default.post(name: .downloadStoreDidChange, object: nil)
+check(!GeckoRuntime.hasBackgroundDownloadGrace && GeckoRuntime.ends == 1, "paused or finished transfers release activity")
+progress[id] = 2
+activity.update()
+staleExpiry()
+check(GeckoRuntime.hasBackgroundDownloadGrace, "old expiry cannot stop a resumed transfer")
+activity.simulateIdle()
+activity.checkProgress()
+check(!GeckoRuntime.hasBackgroundDownloadGrace, "ten-minute stalled transfer releases background activity")
+let begins = GeckoRuntime.begins
+progress[id] = 3
+activity.update()
+check(GeckoRuntime.begins == begins, "stalled transfer cannot renew until foreground")
+app.applicationState = .active
+NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+app.applicationState = .background
+activity.update()
+check(GeckoRuntime.hasBackgroundDownloadGrace, "foreground return permits a later background transfer")
+app.applicationState = .active
+activity.update()
+check(!GeckoRuntime.hasBackgroundDownloadGrace, "foreground releases download activity")
+entitled = false
+app.applicationState = .background
+activity.update()
+app.handlers.last!()
+let count = app.handlers.count
+activity.update()
+check(app.handlers.count == count, "ordinary install does not renew expired UIKit activity")
+app.applicationState = .active
+NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+app.applicationState = .background
+app.synchronousExpiry = true
+activity.update()
+check(!GeckoRuntime.hasBackgroundDownloadGrace, "synchronous expiration leaves no private activity")
+print("Download lifecycle checks passed; actual iOS grants require device testing.")

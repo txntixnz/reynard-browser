@@ -18,6 +18,9 @@
 + (void)beginBackgroundGrace;
 + (BOOL)hasBackgroundGrace;
 + (void)endBackgroundGrace;
++ (void)beginBackgroundDownloadGrace;
++ (BOOL)hasBackgroundDownloadGrace;
++ (void)endBackgroundDownloadGrace;
 
 @end
 
