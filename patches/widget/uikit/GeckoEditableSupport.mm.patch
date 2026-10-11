@@ -1,9 +1,9 @@
 diff --git a/widget/uikit/GeckoEditableSupport.mm b/widget/uikit/GeckoEditableSupport.mm
 new file mode 100644
-index 000000000000..24eeaa8bd3a6
+index 000000000000..bded6434e34e
 --- /dev/null
 +++ b/widget/uikit/GeckoEditableSupport.mm
-@@ -0,0 +1,4273 @@
+@@ -0,0 +1,4287 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -791,11 +791,14 @@ index 000000000000..24eeaa8bd3a6
 +}
 +
 +- (ChildViewTextRange*)textRangeForRange:(NSRange)aRange {
-+  NSUInteger start = [self clampOffset:aRange.location];
-+  NSUInteger end = [self clampOffset:aRange.location + aRange.length];
-+  if (end < start) {
-+    end = start;
++  if (aRange.location == NSNotFound) {
++    return nil;
 +  }
++  // One document snapshot per conversion, rather than querying/copying the
++  // full editor text twice. Clamp length before addition to avoid overflow.
++  const NSUInteger length = [self documentLength];
++  const NSUInteger start = std::min(aRange.location, length);
++  const NSUInteger end = start + std::min(aRange.length, length - start);
 +  ChildViewTextPosition* startPosition =
 +      [ChildViewTextPosition positionWithOffset:start];
 +  ChildViewTextPosition* endPosition =
@@ -1369,9 +1372,7 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +
-+  [mEditable.mTextInputDelegate selectionWillChange:self];
 +  handler->SetSelectedRange(range);
-+  [mEditable.mTextInputDelegate selectionDidChange:self];
 +  if (mEditable.mSelectionDisplayInteraction == nil &&
 +      mEditable.mActiveSelectionHandle != GeckoSelectionHandleNone) {
 +    [NSObject
@@ -2012,10 +2013,10 @@ index 000000000000..24eeaa8bd3a6
 +    }
 +  }
 +
-+  if (mEditable.mSelectionDisplayInteraction != nil) {
-+    [self refreshSelectionUI];
-+  }
 +  if (!mEditable.mTextInputDelegate) {
++    if (mEditable.mSelectionDisplayInteraction != nil) {
++      [self refreshSelectionUI];
++    }
 +    return;
 +  }
 +
@@ -2037,6 +2038,9 @@ index 000000000000..24eeaa8bd3a6
 +      mGeckoChild->Destroyed()) {
 +    return;
 +  }
++  if (mEditable.mSelectionDisplayInteraction != nil) {
++    [self refreshSelectionUI];
++  }
 +  if (mEditable.mSelectionDisplayInteraction == nil) {
 +    [mEditable.mTextInputDelegate selectionWillChange:self];
 +  }
@@ -2056,10 +2060,10 @@ index 000000000000..24eeaa8bd3a6
 +
 +// Deferred selection-change notification after editing commands.
 +- (void)scheduleEditSelectionUpdate {
-+  if (mEditable.mSelectionDisplayInteraction != nil) {
-+    [self refreshSelectionUI];
-+  }
 +  if (!mEditable.mTextInputDelegate) {
++    if (mEditable.mSelectionDisplayInteraction != nil) {
++      [self refreshSelectionUI];
++    }
 +    return;
 +  }
 +
@@ -2266,11 +2270,8 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +
-+  [mEditable.mTextInputDelegate textWillChange:self];
-+  [mEditable.mTextInputDelegate selectionWillChange:self];
 +  handler->ReplaceRange(replacementRange, aText ?: @"");
-+  [mEditable.mTextInputDelegate textDidChange:self];
-+  [mEditable.mTextInputDelegate selectionDidChange:self];
++  [self scheduleEditSelectionUpdate];
 +}
 +
 +// Reports which edit actions should appear in the menu.
@@ -2476,11 +2477,7 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +
-+  [mEditable.mTextInputDelegate textWillChange:self];
-+  [mEditable.mTextInputDelegate selectionWillChange:self];
 +  handler->SetMarkedText(aMarkedText ?: @"", aSelectedRange);
-+  [mEditable.mTextInputDelegate textDidChange:self];
-+  [mEditable.mTextInputDelegate selectionDidChange:self];
 +  [self scheduleEditSelectionUpdate];
 +}
 +
@@ -2510,11 +2507,7 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +
-+  [mEditable.mTextInputDelegate textWillChange:self];
-+  [mEditable.mTextInputDelegate selectionWillChange:self];
 +  handler->UnmarkText();
-+  [mEditable.mTextInputDelegate textDidChange:self];
-+  [mEditable.mTextInputDelegate selectionDidChange:self];
 +  [self scheduleEditSelectionUpdate];
 +}
 +
@@ -2763,6 +2756,12 @@ index 000000000000..24eeaa8bd3a6
 +
 +// MARK: - UIKeyInput (Shared)
 +
++// UIKit-initiated edits must not echo synchronous inputDelegate notifications
++// back into the keyboard. They can reset autocorrection during delete/retype
++// or cause text queries before Gecko has applied the edit. External actions
++// (cut/paste and touch selection) retain their change notifications; ordinary
++// keyboard edits schedule selection reconciliation after the request returns.
++
 +- (void)insertText:(NSString*)aText {
 +  if (!mGeckoChild || mGeckoChild->Destroyed()) {
 +    return;
@@ -2782,14 +2781,10 @@ index 000000000000..24eeaa8bd3a6
 +  BOOL hasBuffer = [self ensureVietnameseBufferWithHandler:handler];
 +  mEditable.mCaretMenuActive = NO;
 +  if (!hasBuffer) {
-+    [mEditable.mTextInputDelegate textWillChange:self];
-+    [mEditable.mTextInputDelegate selectionWillChange:self];
 +    if (![self isKoreanInputMode] || ![self handleKoreanInsertText:aText
 +                                                       withHandler:handler]) {
 +      handler->InsertText(aText);
 +    }
-+    [mEditable.mTextInputDelegate textDidChange:self];
-+    [mEditable.mTextInputDelegate selectionDidChange:self];
 +    [self scheduleEditSelectionUpdate];
 +    return;
 +  }
@@ -2979,14 +2974,23 @@ index 000000000000..24eeaa8bd3a6
 +    return;
 +  }
 +  if (!hasBuffer) {
++    // Ordinary Backspace belongs to Gecko's editor/key-event path. Reading
++    // the entire prefix and reselecting it per key makes held deletion scale
++    // with document length, and bypasses webpage Backspace event handling.
++    // Keep the explicit range path for active IME/Korean composition only.
++    NSRange markedRange = NSMakeRange(NSNotFound, 0);
++    if (!handler->MarkedRange(markedRange) && !mEditable.mKoreanComposedText &&
++        handler->HandleCommand(Command::DeleteCharBackward)) {
++      [self scheduleEditSelectionUpdate];
++      return;
++    }
 +    NSRange deleteRange = [self deleteBackwardRangeWithHandler:handler];
 +    if (deleteRange.location == NSNotFound) {
 +      return;
 +    }
 +
-+    [mEditable.mTextInputDelegate textWillChange:self];
 +    handler->ReplaceRange(deleteRange, @"");
-+    [mEditable.mTextInputDelegate textDidChange:self];
++    [self scheduleEditSelectionUpdate];
 +    return;
 +  }
 +
@@ -3024,7 +3028,17 @@ index 000000000000..24eeaa8bd3a6
 +}
 +
 +- (BOOL)hasText {
-+  return [self documentLength] > 0;
++  if ([self hasVietnameseBuffer]) {
++    return [mEditable.mVietnameseBufferText length] > 0;
++  }
++  widget::TextInputHandler* handler = [self textHandler];
++  if (!handler) {
++    return NO;
++  }
++  // Keyboard availability checks need only one UTF-16 code unit, not a copy
++  // of the entire document on every repeat of Backspace.
++  nsString text;
++  return handler->TextInRange(NSMakeRange(0, 1), text) && text.Length() > 0;
 +}
 +
 +- (BOOL)hasContent {

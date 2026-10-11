@@ -108,7 +108,7 @@ final class SessionManager {
             return
         }
         sessionsRequestedActive[ObjectIdentifier(session)] = session
-        session.setActive(isApplicationForeground || backgroundPageSession === session)
+        session.setActive(isApplicationForeground || backgroundPageSession === session || externalResponseReferenceCounts[ObjectIdentifier(session)] != nil)
         session.setFocused(true)
     }
     
@@ -130,7 +130,7 @@ final class SessionManager {
         }
         isApplicationForeground = isForeground
         for session in sessionsRequestedActive.values {
-            session.setActive(isForeground || backgroundPageSession === session)
+            session.setActive(isForeground || backgroundPageSession === session || externalResponseReferenceCounts[ObjectIdentifier(session)] != nil)
         }
     }
     
@@ -165,7 +165,9 @@ final class SessionManager {
         livePageBackgroundTask = nil
         backgroundPageSession = nil
         task?.stop()
-        if !isApplicationForeground { session?.setActive(false) }
+        if !isApplicationForeground, let session {
+            session.setActive(externalResponseReferenceCounts[ObjectIdentifier(session)] != nil)
+        }
     }
     
     // MARK: - Session State Persistence
@@ -216,7 +218,7 @@ final class SessionManager {
             return
         }
         sessionsRequestedActive[ObjectIdentifier(session)] = session
-        session.setActive(isApplicationForeground)
+        session.setActive(true)
         session.setFocused(false)
     }
     

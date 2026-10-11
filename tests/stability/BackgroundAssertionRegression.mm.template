@@ -43,6 +43,17 @@ int main() {
         [GeckoRuntimeBridge endBackgroundGrace];
         for (BKSProcessAssertion *assertion in created) { NSCAssert(!assertion.valid, @"Cleanup must release every assertion"); }
         NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Grace must end");
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        [GeckoRuntimeBridge beginBackgroundDownloadGrace];
+        NSUInteger overlapCount = created.count;
+        [GeckoRuntimeBridge endBackgroundGrace];
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace] && [GeckoRuntimeBridge hasBackgroundDownloadGrace], @"Page ending must not suspend downloads");
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        NSCAssert(created.count == overlapCount, @"Overlapping owners must share assertions");
+        [GeckoRuntimeBridge endBackgroundDownloadGrace];
+        NSCAssert([GeckoRuntimeBridge hasBackgroundGrace] && ![GeckoRuntimeBridge hasBackgroundDownloadGrace], @"Download ending must not suspend page");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        for (BKSProcessAssertion *assertion in created) { NSCAssert(!assertion.valid, @"Last owner releases assertions"); }
         permitted = NO;
         [GeckoRuntimeBridge beginBackgroundGrace];
         NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Denied API result must not report protection");

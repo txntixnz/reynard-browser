@@ -6,6 +6,10 @@ CLANG_PATH="$(xcrun --sdk iphoneos --find clang)"
 SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
+if [ -f "$ROOT_DIR/prebuilt/COMPILE_CHECK_ONLY" ]; then
+	echo "Refusing to package an engine prepared for app compilation only."
+	exit 1
+fi
 ARCHIVE_DIR="$ROOT_DIR/dist/Reynard.xcarchive"
 APP_DIR="$ARCHIVE_DIR/Products/Applications"
 WORK_DIR="$ROOT_DIR/dist/Reynard"

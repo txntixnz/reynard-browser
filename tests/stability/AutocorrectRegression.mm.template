@@ -1,0 +1,212 @@
+// Production edit methods, a controlled editor, and an input-delegate recorder.
+// Does not simulate Apple's prediction service or asynchronous Gecko IPC.
+#import <Foundation/Foundation.h>
+#include <algorithm>
+#include <cassert>
+#include <cstdio>
+
+@interface UITextRange : NSObject
+@property NSRange range;
+@end
+@implementation UITextRange
+@end
+@protocol UITextInputDelegate <NSObject>
+- (void)textWillChange:(id)view;
+- (void)textDidChange:(id)view;
+- (void)selectionWillChange:(id)view;
+- (void)selectionDidChange:(id)view;
+@end
+@protocol Credential <NSObject>
+- (NSString*)autofillTextContentType;
+- (void)didSelectOneTimeCode:(NSString*)text;
+@end
+static NSString *UITextContentTypeOneTimeCode = @"one-time-code";
+static int delegateCalls;
+@interface Delegate : NSObject <UITextInputDelegate>
+@end
+@implementation Delegate
+- (void)textWillChange:(id)view { delegateCalls++; }
+- (void)textDidChange:(id)view { delegateCalls++; }
+- (void)selectionWillChange:(id)view { delegateCalls++; }
+- (void)selectionDidChange:(id)view { delegateCalls++; }
+@end
+enum GeckoSelectionHandle { GeckoSelectionHandleNone, GeckoSelectionHandleStart };
+enum ContentCommand { eContentCommandCut, eContentCommandPaste };
+enum class Command { DeleteCharBackward };
+namespace widget {
+struct TextInputHandler {
+  __strong NSMutableString *text = [NSMutableString stringWithString:@"hello teh"];
+  NSRange selection = NSMakeRange(9, 0);
+  NSRange marked = NSMakeRange(NSNotFound, 0);
+  int backspaceEvents = 0;
+  bool preventBackspace = false;
+ private:
+  // Match the actual engine header: UIKit callers cannot use this helper.
+  bool HasMarkedText() const { return marked.location != NSNotFound; }
+ public:
+  bool HandleCommand(Command command) {
+    assert(command == Command::DeleteCharBackward);
+    backspaceEvents++;
+    if (preventBackspace) { return true; }
+    NSRange range = selection;
+    if (!range.length) {
+      if (!range.location) { return true; }
+      range = [text rangeOfComposedCharacterSequenceAtIndex:range.location - 1];
+    }
+    return ReplaceRange(range, @"");
+  }
+  bool SetSelectedRange(NSRange range) { selection = range; return true; }
+  bool ReplaceRange(NSRange range, NSString *value) {
+    [text replaceCharactersInRange:range withString:value];
+    selection = NSMakeRange(range.location + value.length, 0); return true;
+  }
+  bool InsertText(NSString *value) { return ReplaceRange(selection, value); }
+  bool SetMarkedText(NSString *value, NSRange range) {
+    NSUInteger start = selection.location;
+    ReplaceRange(selection, value); marked = NSMakeRange(start, value.length);
+    selection = NSMakeRange(start + range.location, range.length); return true;
+  }
+  bool MarkedRange(NSRange& range) { range = HasMarkedText() ? marked : NSMakeRange(NSNotFound, 0); return HasMarkedText(); }
+  bool UnmarkText() { marked = NSMakeRange(NSNotFound, 0); return true; }
+  bool HandlePhysicalDeleteBackward(BOOL buffer, BOOL korean) { return false; }
+  bool RunCommand(ContentCommand command, bool) { return true; }
+};
+}
+struct Widget {
+  widget::TextInputHandler handler;
+  bool destroyed = false;
+  bool Destroyed() { return destroyed; }
+  widget::TextInputHandler *GetTextInputHandler() { return &handler; }
+};
+struct Editable {
+  __strong id<UITextInputDelegate> mTextInputDelegate;
+  __strong id<Credential> mCredentialDelegate;
+  BOOL mCaretMenuActive, mPendingCaretMenu;
+  GeckoSelectionHandle mActiveSelectionHandle;
+  NSRange mShadowSelectedRange, mVietnameseBufferSelection, mVietnameseBufferMarkedRange, mVietnamesePendingDeleteRange;
+  __strong NSString *mKoreanComposedText;
+  __strong NSString *mVietnameseBufferText;
+  __strong id mSelectionDisplayInteraction;
+};
+@interface UIMenuController : NSObject
++ (instancetype)sharedMenuController;
+- (void)hideMenuFromView:(id)view;
+@end
+@implementation UIMenuController
++ (instancetype)sharedMenuController { static UIMenuController *menu; if (!menu) menu = [self new]; return menu; }
+- (void)hideMenuFromView:(id)view {}
+@end
+@interface ChildView : NSObject {
+@public
+  Widget widget;
+  Widget *mGeckoChild;
+  Editable mEditable;
+  int scheduled;
+  int prefixQueries;
+}
+- (widget::TextInputHandler*)textHandler;
+- (NSRange)rangeForTextRange:(UITextRange*)range;
+- (BOOL)hasVietnameseBuffer;
+- (BOOL)ensureVietnameseBufferWithHandler:(widget::TextInputHandler*)handler;
+- (BOOL)shouldUseVietnameseIMEPath;
+- (BOOL)isKoreanInputMode;
+- (BOOL)handleKoreanInsertText:(NSString*)text withHandler:(widget::TextInputHandler*)handler;
+- (void)clearVietnameseBuffer;
+- (void)clearVietnameseMarkedRange;
+- (NSRange)geckoRangeForVisibleRange:(NSRange)range;
+- (NSRange)geckoRangeForVietnameseBufferRange:(NSRange)range;
+- (void)replaceVietnameseBufferRange:(NSRange)range withText:(NSString*)text;
+- (NSRange)vietnameseBufferDeleteBackwardRange;
+- (NSRange)deleteBackwardRangeWithHandler:(widget::TextInputHandler*)handler;
+- (void)flushVietnamesePendingDelete;
+- (void)scheduleEditSelectionUpdate;
+- (void)resetHandleState;
+- (void)updateEditMenu;
+- (void)resolveCaretMenuIfPending;
+- (void)insertText:(NSString*)text;
+- (void)deleteBackward;
+- (void)replaceRange:(UITextRange*)range withText:(NSString*)text;
+- (void)setSelectedTextRange:(UITextRange*)range;
+- (void)setMarkedText:(NSString*)text selectedRange:(NSRange)range;
+- (void)unmarkText;
+- (void)cut:(id)sender;
+- (void)paste:(id)sender;
+@end
+@implementation ChildView
+- (widget::TextInputHandler*)textHandler { return mGeckoChild && !mGeckoChild->Destroyed() ? &widget.handler : nullptr; }
+- (NSRange)rangeForTextRange:(UITextRange*)range { return range ? range.range : NSMakeRange(NSNotFound, 0); }
+- (BOOL)hasVietnameseBuffer { return NO; }
+- (BOOL)ensureVietnameseBufferWithHandler:(widget::TextInputHandler*)handler { return NO; }
+- (BOOL)shouldUseVietnameseIMEPath { return NO; }
+- (BOOL)isKoreanInputMode { return NO; }
+- (BOOL)handleKoreanInsertText:(NSString*)text withHandler:(widget::TextInputHandler*)handler { return NO; }
+- (void)clearVietnameseBuffer {}
+- (void)clearVietnameseMarkedRange {}
+- (NSRange)geckoRangeForVisibleRange:(NSRange)range { return range; }
+- (NSRange)geckoRangeForVietnameseBufferRange:(NSRange)range { return range; }
+- (void)replaceVietnameseBufferRange:(NSRange)range withText:(NSString*)text {}
+- (NSRange)vietnameseBufferDeleteBackwardRange { return NSMakeRange(NSNotFound, 0); }
+- (NSRange)deleteBackwardRangeWithHandler:(widget::TextInputHandler*)handler {
+  prefixQueries++;
+  NSRange range = handler->selection;
+  return range.length ? range : range.location ? NSMakeRange(range.location - 1, 1) : NSMakeRange(NSNotFound, 0);
+}
+- (void)flushVietnamesePendingDelete {}
+- (void)scheduleEditSelectionUpdate { scheduled++; }
+- (void)resetHandleState {}
+- (void)updateEditMenu {}
+- (void)resolveCaretMenuIfPending {}
+// EDIT_METHODS
+@end
+static UITextRange *range(NSUInteger location, NSUInteger length) {
+  UITextRange *value = [UITextRange new]; value.range = NSMakeRange(location, length); return value;
+}
+int main() {
+  @autoreleasepool {
+    ChildView *view = [ChildView new]; view->mGeckoChild = &view->widget;
+    view->mEditable.mTextInputDelegate = [Delegate new];
+    [view setSelectedTextRange:range(6, 3)];
+    [view deleteBackward];
+    assert([view->widget.handler.text isEqualToString:@"hello "] && view->scheduled == 1);
+    [view insertText:@"teh"];
+    [view replaceRange:range(6, 3) withText:@"the"];
+    assert([view->widget.handler.text isEqualToString:@"hello the"] && view->scheduled == 3);
+    [view deleteBackward]; [view insertText:@"e"];
+    assert([view->widget.handler.text isEqualToString:@"hello the"] && view->scheduled == 5);
+    [view setMarkedText:@"!" selectedRange:NSMakeRange(1, 0)];
+    [view unmarkText];
+    assert(view->scheduled == 7 && view->widget.handler.marked.location == NSNotFound);
+    assert(delegateCalls == 0);
+    assert(view->prefixQueries == 0 && view->widget.handler.backspaceEvents == 2);
+    std::puts("PASS: delete/retype, replacement and composition do not synchronously reset the input delegate; edits schedule selection reconciliation");
+    [view cut:nil]; [view paste:nil];
+    assert(delegateCalls == 8);
+    std::puts("PASS: external cut/paste still notify the input delegate");
+    auto& handler = view->widget.handler;
+    handler.text = [NSMutableString stringWithCapacity:20000];
+    for (int i = 0; i < 20000; i++) { [handler.text appendString:@"a"]; }
+    handler.selection = NSMakeRange(handler.text.length, 0);
+    for (int i = 0; i < 20000; i++) { [view deleteBackward]; }
+    assert(handler.text.length == 0 && view->prefixQueries == 0);
+    std::puts("PASS: sustained deletion of long text does not query the document prefix");
+    handler.text = [NSMutableString stringWithString:@"A👨‍👩‍👧‍👦e\u0301🇩🇪"];
+    handler.selection = NSMakeRange(handler.text.length, 0);
+    [view deleteBackward]; [view deleteBackward]; [view deleteBackward];
+    assert([handler.text isEqualToString:@"A"]);
+    handler.preventBackspace = true;
+    [view deleteBackward];
+    assert([handler.text isEqualToString:@"A"] && view->prefixQueries == 0);
+    std::puts("PASS: normal Backspace preserves grapheme deletion and respects consumed key events in the editor double");
+    handler.preventBackspace = false;
+    handler.marked = NSMakeRange(0, 1);
+    [view deleteBackward];
+    assert(handler.text.length == 0 && view->prefixQueries == 1);
+    std::puts("PASS: active marked-text composition retains the existing explicit-range path");
+    int scheduledBefore = view->scheduled;
+    view->widget.destroyed = true;
+    [view insertText:@"lost"]; [view deleteBackward];
+    assert(view->scheduled == scheduledBefore);
+    std::puts("PASS: destroyed editors ignore keyboard edits");
+  }
+  return 0;
+}

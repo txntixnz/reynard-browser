@@ -162,6 +162,7 @@ final class DownloadItemCell: UITableViewCell {
         case .completed:
             representedDownloadID = item.id
             statusLabel.text = item.fileExists ? (item.totalBytes.map { Self.formattedByteCount($0) } ?? NSLocalizedString("Unknown size", comment: "")) : NSLocalizedString("Deleted", comment: "")
+            if item.fileExists, let warning = item.destinationWarning { statusLabel.text = warning }
             progressView.isHidden = true
             progressView.progress = 0
             fileIconView.transform = .identity

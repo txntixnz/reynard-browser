@@ -99,6 +99,9 @@ public class GeckoRuntime {
     public static func beginBackgroundGrace() { GeckoRuntimeBridge.beginBackgroundGrace() }
     public static var hasBackgroundGrace: Bool { GeckoRuntimeBridge.hasBackgroundGrace() }
     public static func endBackgroundGrace() { GeckoRuntimeBridge.endBackgroundGrace() }
+    public static func beginBackgroundDownloadGrace() { GeckoRuntimeBridge.beginBackgroundDownloadGrace() }
+    public static var hasBackgroundDownloadGrace: Bool { GeckoRuntimeBridge.hasBackgroundDownloadGrace() }
+    public static func endBackgroundDownloadGrace() { GeckoRuntimeBridge.endBackgroundDownloadGrace() }
     
     public static func setLocale(acceptLanguages: String) {
         GeckoEventDispatcherWrapper.runtimeInstance.dispatch(

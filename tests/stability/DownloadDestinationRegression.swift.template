@@ -1,0 +1,37 @@
+import Foundation
+
+func check(_ value: @autoclosure () -> Bool, _ message: String) { precondition(value(), message); print("PASS: \(message)") }
+let fm = FileManager.default
+let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+let stage = root.appendingPathComponent("Reynard")
+let shared = root.appendingPathComponent("Downloads")
+let other = root.appendingPathComponent("Other")
+for url in [stage, shared, other] { try fm.createDirectory(at: url, withIntermediateDirectories: true) }
+let suite = "Reynard.Downloads.Test." + UUID().uuidString
+let defaults = UserDefaults(suiteName: suite)!
+defer { defaults.removePersistentDomain(forName: suite); try? fm.removeItem(at: root) }
+let destination = DownloadDestination(defaults: defaults)
+let source = stage.appendingPathComponent("photo.jpg")
+try Data("Safari original".utf8).write(to: shared.appendingPathComponent("photo.jpg"))
+try Data("Reynard download".utf8).write(to: source)
+try destination.select(shared)
+let saved = destination.saveCompletedFile(source)
+check(saved.url.lastPathComponent == "photo 2.jpg" && saved.folderBookmark != nil, "shared-folder name collision gets a unique filename")
+let original = try String(contentsOf: shared.appendingPathComponent("photo.jpg"), encoding: .utf8)
+check(original == "Safari original", "Safari original survives export")
+check(!fm.fileExists(atPath: source.path), "successful export removes staging file")
+try destination.select(other)
+let reloaded = DownloadDestination(defaults: defaults)
+check(reloaded.fileURL(relativePath: saved.url.lastPathComponent, folderBookmark: saved.folderBookmark, fallbackFolder: stage)?.resolvingSymlinksInPath() == saved.url.resolvingSymlinksInPath(), "history resolves original folder after destination changes and app relaunch")
+destination.reset()
+try Data("local".utf8).write(to: source)
+let local = destination.saveCompletedFile(source)
+check(local.folderBookmark == nil && local.url == source, "reset applies to later downloads")
+destination.removeRecordedFile(relativePath: saved.url.lastPathComponent, folderBookmark: saved.folderBookmark, fallbackFolder: stage)
+check(!fm.fileExists(atPath: saved.url.path) && fm.fileExists(atPath: shared.appendingPathComponent("photo.jpg").path), "deletion removes only the recorded file")
+check(destination.fileURL(relativePath: "../photo.jpg", folderBookmark: saved.folderBookmark, fallbackFolder: stage) == nil, "manifest cannot escape its recorded folder")
+try destination.select(other)
+try fm.removeItem(at: other)
+let fallback = destination.saveCompletedFile(source)
+check(fallback.url == source && fallback.folderBookmark == nil && fallback.warning != nil && fm.fileExists(atPath: source.path), "unavailable destination preserves download with visible fallback")
+print("Download destination filesystem checks passed.")

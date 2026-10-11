@@ -401,6 +401,7 @@ final class DownloadsViewController: UIViewController, UITableViewDataSource, UI
     private func hasSameVisibleState(_ lhs: DownloadItemSnapshot, _ rhs: DownloadItemSnapshot) -> Bool {
         lhs.id == rhs.id &&
         lhs.fileName == rhs.fileName &&
+        lhs.destinationWarning == rhs.destinationWarning &&
         lhs.fileURL == rhs.fileURL &&
         lhs.state == rhs.state &&
         lhs.canPause == rhs.canPause &&
