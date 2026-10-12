@@ -21,6 +21,9 @@ KEYBOARD_COMMIT = "626195e58056f946f73d6fdc88cd8809fdc954c2"
 KEYBOARD_ARTIFACT = 11683403964
 KEYBOARD_RUN = 38072739578
 KEYBOARD_ARCHIVE_SHA256 = "7a9515df2431b668d9cbb22e37c8ca5360a00504081129795b7d544a8cd76ad7"
+RELEASE_017_COMMIT = "cd934cafe5b004e490c720fcdd3c0ed421c9983f"
+RELEASE_017_SHA256 = "0baaa2b0e6f60f61bf2f20ef9df7e319f39a2a7da5e32eb6c83b7d0239b4611c"
+RELEASE_017_URL = "https://github.com/minh-ton/reynard-browser/releases/download/0.17.0/Reynard-TrollStore.tipa"
 PREFIX = "Payload/Reynard.app/"
 RUNTIME = PREFIX + "Frameworks/GeckoView.framework/Frameworks/"
 LIBRARIES = {"XUL", "libfreebl3.dylib", "liblgpllibs.dylib", "libmozinference.dylib",
@@ -83,12 +86,19 @@ def verify_engine_sources(engine_commit, compile_check_only=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--package", type=Path)
-    parser.add_argument("--keyboard-engine", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--keyboard-engine", action="store_true")
+    modes.add_argument("--release-017", action="store_true")
     parser.add_argument("--compile-check-only", action="store_true",
                         help="Allow editor implementation changes for app compilation; packaging is disabled")
     args = parser.parse_args()
     # Refuse to pair this release with changed engine code/ABI.
-    engine_commit = KEYBOARD_COMMIT if args.keyboard_engine else BUILD
+    engine_commit = RELEASE_017_COMMIT if args.release_017 else KEYBOARD_COMMIT if args.keyboard_engine else BUILD
+    version = "0.17.0" if args.release_017 else VERSION
+    engine_tag = "FIREFOX_157_0_1_RELEASE" if args.release_017 else ENGINE_TAG
+    expected_digest = RELEASE_017_SHA256 if args.release_017 else SHA256
+    release_url = RELEASE_017_URL if args.release_017 else URL
+    release_build = RELEASE_017_COMMIT[:7] if args.release_017 else BUILD
     if args.compile_check_only and not args.keyboard_engine:
         parser.error("--compile-check-only requires --keyboard-engine")
     verify_engine_sources(engine_commit, args.compile_check_only)
@@ -98,16 +108,16 @@ def main():
         marker.write_text("This engine is for app compilation only; do not package.\n")
     elif marker.exists():
         marker.unlink()
-    if (ROOT / "engine/release.txt").read_text().strip() != ENGINE_TAG:
+    if (ROOT / "engine/release.txt").read_text().strip() != engine_tag:
         raise RuntimeError("Engine release tag does not match the pinned package")
-    package = keyboard_engine_package(args.package) if args.keyboard_engine else args.package or ROOT / "prebuilt/Reynard-0.16.0-TrollStore.tipa"
+    package = keyboard_engine_package(args.package) if args.keyboard_engine else args.package or ROOT / f"prebuilt/Reynard-{version}-TrollStore.tipa"
     if not args.package and not args.keyboard_engine:
         package.parent.mkdir(parents=True, exist_ok=True)
-        print("Downloading the pinned upstream 0.16.0 TrollStore engine", flush=True)
-        urllib.request.urlretrieve(URL, package)
+        print(f"Downloading the pinned upstream {version} TrollStore engine", flush=True)
+        urllib.request.urlretrieve(release_url, package)
     with package.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    if not args.keyboard_engine and digest != SHA256:
+    if not args.keyboard_engine and digest != expected_digest:
         raise RuntimeError("Released package checksum mismatch; refusing engine reuse")
 
     dist = ROOT / "engine/firefox/obj-aarch64-apple-ios/dist"
@@ -115,8 +125,8 @@ def main():
     binary_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(package) as archive:
         info = plistlib.loads(archive.read(PREFIX + "Info.plist"))
-        expected_build = KEYBOARD_COMMIT[:7] if args.keyboard_engine else BUILD
-        if info["CFBundleShortVersionString"] != VERSION or info["CFBundleVersion"] != expected_build:
+        expected_build = KEYBOARD_COMMIT[:7] if args.keyboard_engine else release_build
+        if info["CFBundleShortVersionString"] != version or info["CFBundleVersion"] != expected_build:
             raise RuntimeError("Released package version/build mismatch")
         copied_libraries = set()
         for item in archive.infolist():
@@ -149,8 +159,9 @@ def main():
     if not all((binary_dir / item).exists() for item in ("chrome.manifest", "chrome", "components", "defaults", "res")):
         raise RuntimeError("Released engine runtime resources are missing")
     include = dist / "include"
-    shutil.copytree(ROOT / "tools/prebuilt-gecko-headers", include, dirs_exist_ok=True)
-    (include / "mozilla-config.h").write_text('#define MOZILLA_VERSION "157.0"\n')
+    shutil.copytree(ROOT / ("tools/prebuilt-gecko-headers-017" if args.release_017 else "tools/prebuilt-gecko-headers"), include, dirs_exist_ok=True)
+    gecko_version = "157.0.1" if args.release_017 else "157.0"
+    (include / "mozilla-config.h").write_text(f'#define MOZILLA_VERSION "{gecko_version}"\n')
     # The existing app packaging script expects this source theme directory.
     theme = ROOT / "engine/firefox/toolkit/mozapps/extensions/default-theme"
     shutil.copytree(binary_dir / "default-theme", theme, dirs_exist_ok=True)

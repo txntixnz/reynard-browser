@@ -7,7 +7,11 @@ networking or ChatGPT. The workflow also builds the complete app separately.
 from pathlib import Path
 import subprocess
 import tempfile
+import argparse
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--released-engine", action="store_true", help="Use the untouched checksum-verified 0.17.0 engine, without legacy 0.16 editor fixtures")
+args = parser.parse_args()
 ROOT = Path(__file__).resolve().parents[2]
 subprocess.run(["python3", str(ROOT / "tests/stability/test-engine-package.py")], check=True)
 TAB_SOURCE = ROOT / "browser/Reynard/Client/TabManagement/TabManagerImpl.swift"
@@ -60,15 +64,16 @@ with tempfile.TemporaryDirectory(prefix="reynard-stability-") as tmp:
     subprocess.run(["swiftc", "-parse-as-library", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 
-    patch = (ROOT / "patches/widget/uikit/GeckoEditableSupport.mm.patch").read_text()
-    native_source = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
-    start = native_source.index("- (BOOL)interactionShouldBegin:")
-    end = native_source.index("\n}", start) + 2
-    native_template = (ROOT / "tests/stability/TextInteractionRegression.mm.template").read_text()
-    native_file = Path(tmp) / "text-interaction.mm"
-    native_file.write_text(native_template.replace("// INTERACTION_METHOD", native_source[start:end]))
-    subprocess.run(["clang++", "-std=c++17", "-fobjc-arc", "-framework", "Foundation", "-framework", "CoreGraphics", str(native_file), "-o", str(binary)], check=True)
-    subprocess.run([str(binary)], check=True)
+    if not args.released_engine:
+        patch = (ROOT / "patches/widget/uikit/GeckoEditableSupport.mm.patch").read_text()
+        native_source = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
+        start = native_source.index("- (BOOL)interactionShouldBegin:")
+        end = native_source.index("\n}", start) + 2
+        native_template = (ROOT / "tests/stability/TextInteractionRegression.mm.template").read_text()
+        native_file = Path(tmp) / "text-interaction.mm"
+        native_file.write_text(native_template.replace("// INTERACTION_METHOD", native_source[start:end]))
+        subprocess.run(["clang++", "-std=c++17", "-fobjc-arc", "-framework", "Foundation", "-framework", "CoreGraphics", str(native_file), "-o", str(binary)], check=True)
+        subprocess.run([str(binary)], check=True)
 
     popup_template = (ROOT / "tests/stability/NewTabRegression.swift.template").read_text()
     popup_source = popup_template.replace(

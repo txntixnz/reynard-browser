@@ -15,6 +15,8 @@ import Foundation
 @MainActor final class GeckoSession {
     var engineView: EngineView? = EngineView()
     var hardwareFocusCalls = 0
+    var softwareDismissCalls = 0
+    func dismissSoftwareKeyboard() { softwareDismissCalls += 1 }
     func focusForHardwareKeyboard() { hardwareFocusCalls += 1 }
 }
 @MainActor final class Tab { var session = GeckoSession() }
@@ -77,10 +79,10 @@ import Foundation
         browser.restore(session)
         check(session.hardwareFocusCalls == 1, "hidden content cannot reclaim keyboard focus")
         browser.dismissKeyboard()
-        check(session.hardwareFocusCalls == 1, "dismissal cannot affect hidden content")
+        check(session.hardwareFocusCalls == 1 && session.softwareDismissCalls == 0, "dismissal cannot affect hidden content")
         browser.contentView.displaying = true
         browser.dismissKeyboard()
-        check(session.hardwareFocusCalls == 2, "Done explicitly suppresses the software keyboard")
+        check(session.hardwareFocusCalls == 1 && session.softwareDismissCalls == 1, "Done uses the release native keyboard dismissal")
 
         let picker = FilePicker()
         let sheet = UIViewController()

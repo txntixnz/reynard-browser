@@ -1,3 +1,37 @@
+## Official 0.17.0 is the user-confirmed typing baseline (2026-10-12)
+
+User installed the OFFICIAL 0.17.0 release and reports typing issues are gone;
+the other issues remain. This is not a failure report for our custom background
+and downloads code: the official package does not include those app-side changes.
+Our earlier combined 0.16.0 run 38182191273 completed and produced the installable
+TIPA artifact 11719857115 (archive digest 3d15d55ccafac8ce23d7deddaa9023ea1004f0396649715338ed70563e8f0443)
+and recovery artifact 11719492864. That build is preserved on ios16-autocorrect-fix.
+
+New branch ios16-v017-background-fix merges the exact upstream 0.17.0 release
+commit cd934cafe5b004e490c720fcdd3c0ed421c9983f. Engine and patches are EXACTLY
+that release; none of the older custom native editor changes are applied.
+Browser/helper changes retain draft/restoration/new-tab fixes, finite ChatGPT
+activity, independent download activity, child exit cleanup, folder selection,
+per-entry bookmarks and safe completed-file removal. Keyboard dismissal uses
+the release's native API, with the existing visible-content guard and picker
+presentation/focus safeguards retained.
+
+The browser-only workflow reuses the official TrollStore package. Locally checked
+its actual SHA-256 0baaa2b0e6f60f61bf2f20ef9df7e319f39a2a7da5e32eb6c83b7d0239b4611c,
+version 0.17.0, build cd934ca. Source guard rejects any engine/patch difference.
+Separate 0.17 bridge headers include the new contentTranslationY argument and
+dismissSoftwareKeyboard selector; the bootstrap/runtime ABI headers are unchanged.
+The app/framework/helpers are freshly compiled and packaged, without compiling
+Gecko. Legacy 0.16 native fixture checks are skipped only in this released-engine
+mode; browser/session/picker/new-tab/background/download regression checks remain.
+The native 0.17 typing code is preserved byte-for-byte from the verified release.
+
+Target device remains iPhone 13 Pro Max, iOS 16.0, TrollStore/Dopamine/full JIT.
+User reports workflow completion and tests. Do not monitor the whole workflow.
+Downloads folder setup: Settings → General → Downloads → Save Downloads To →
+On My iPhone → Downloads. Real background grants and provider access remain
+device tests. Keep the official 0.17.0 engine as the baseline.
+
 ## Retry after engine API compilation failure (2026-10-12 user local time)
 
 Run 38154966140 / head 9055daef passed every regression and the complete iOS
