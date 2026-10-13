@@ -1,3 +1,47 @@
+## Long ChatGPT background responses (2026-10-13)
+
+User confirms the custom 0.17.0-based build's background downloads WORK.
+Typing remains fixed. Remaining reports: ChatGPT network/timeouts after leaving
+Reynard, intermittent missing messages, and "Working for" 55–100 minutes.
+Conversation switches through ChatGPT's own sidebar sometimes spin until refresh;
+this is same-page SPA navigation, not browser tab selection.
+User's 11.5-second clip RPReplay_Final1791864998.mp4 was inspected from its
+scratch attachment. The conversation repeatedly changes scroll position while
+browser chrome stays fixed and live tool/status content is visible. No keyboard
+or selection is shown. Root cause and applicability of the 0.17.1 caret fix are
+unproven. No speculative scrolling preference or page script was added.
+
+Found a definite app-side limitation: LivePageBackgroundTask always released the
+page's assertion after 180 seconds, including on entitled TrollStore installs.
+The new candidate extends ONLY entitled installs to a finite two-hour window,
+using the existing host/content/socket assertion mechanism also used by the
+user-confirmed background downloads. Ordinary installs keep the three-minute
+maximum and UIKit's earlier expiration. Foreground return, session deactivation,
+denial and deadline still clean up; repeated starts do not renew the window;
+download ownership remains independent. No audio, prompt replay or auto reload.
+Longer background execution may use more battery. Device grants/connectivity and
+actual ChatGPT completion still require device testing. This does not establish
+the cause of every missing message, foreground sidebar hang, or service-side task.
+
+No HTTP/3 code change made. Suggested a reversible about:config test of
+network.http.http3.enable=false; user has not reported its result. Do not present
+that hypothesis as a confirmed diagnosis. Download folder selection has also not
+been confirmed; use the existing picker rather than hardcoding Safari's container.
+
+User then reported official 0.17.1. Inspected all ten commits since 0.17.0:
+selection, caret, image paste, edit menu, desktop UA and toolbar fixes; no specific
+background/connection fix found. Candidate now merges exact tag commit
+c4b79f7d142c6c19fff9dbbf2ecd25bc759f2bb1. Full engine/patch source equals that
+tag; bridge headers are unchanged from 0.17.0. Reuses official 0.17.1 TIPA with
+SHA-256 f9cf4b70d85b02d8ef40bdf4a4a84bb2e0fff21f795757210b448ebe73d760b6,
+version 0.17.1 / build c4b79f7. Preparation uses --release-0171.
+
+This candidate preserves the exact official 0.17.1 engine and native typing patches,
+so the existing browser-only workflow reuses the checksum-verified engine. User
+reports workflow completion; do not monitor the entire run. Download the single
+Reynard-0.17.1-Long-ChatGPT-Responses-TrollStore artifact containing
+Reynard-TrollStore.tipa when CI succeeds.
+
 ## Official 0.17.0 is the user-confirmed typing baseline (2026-10-12)
 
 User installed the OFFICIAL 0.17.0 release and reports typing issues are gone;

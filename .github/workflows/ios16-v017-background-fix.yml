@@ -1,4 +1,4 @@
-name: iOS 16 - 0.17.0 Background and Downloads
+name: iOS 16 - 0.17.1 Long ChatGPT Responses and Downloads
 
 on:
   push:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build browser with official 0.17.0 typing engine
+    name: Build browser with official 0.17.1 typing engine
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -30,8 +30,8 @@ jobs:
           python3 tests/stability/run-downloads.py
       - name: Install packaging dependencies
         run: brew install ldid python@3.12
-      - name: Prepare unchanged verified 0.17.0 engine
-        run: '"$(brew --prefix python@3.12)/bin/python3.12" tools/release/prepare-prebuilt-gecko.py --release-017'
+      - name: Prepare unchanged verified 0.17.1 engine
+        run: '"$(brew --prefix python@3.12)/bin/python3.12" tools/release/prepare-prebuilt-gecko.py --release-0171'
       - name: Initialize idevice support
         run: git submodule update --init --recursive support/idevice
       - uses: dtolnay/rust-toolchain@stable
@@ -57,6 +57,6 @@ jobs:
         run: ./tools/release/create-ipa.sh --trollstore
       - uses: actions/upload-artifact@v4
         with:
-          name: Reynard-0.17.0-Background-Downloads-TrollStore
+          name: Reynard-0.17.1-Long-ChatGPT-Responses-TrollStore
           path: dist/Reynard-TrollStore.tipa
           if-no-files-found: error

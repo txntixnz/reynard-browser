@@ -42,13 +42,14 @@ check(task.start { completions += 1 }, "UIKit-only background window starts")
 let oldExpiration = app.handlers.last!
 let oldDeadline = task.testDeadline!
 check(task.start { preconditionFailure("duplicate callback") }, "repeated start retains the existing window")
-check(app.handlers.count == 1 && LivePageBackgroundTask.maximumDuration == 180, "repeated starts do not renew the three-minute deadline")
+check(app.handlers.count == 1 && LivePageBackgroundTask.maximumDuration == 180, "ordinary installs retain a finite three-minute maximum without renewal")
 oldExpiration()
 check(completions == 1 && app.ended.count == 1, "UIKit expiry releases activity exactly once without private assertion")
 task.stop()
 check(completions == 1 && app.ended.count == 1, "repeated cleanup is harmless")
 entitled = true
 GeckoRuntime.privateAllowed = true
+check(LivePageBackgroundTask.maximumDuration == 7200, "entitled ChatGPT activity is not cut off after three minutes")
 check(task.start { completions += 1 }, "entitled build requests the private background assertion")
 let currentDeadline = task.testDeadline!
 oldExpiration(); oldDeadline.perform()

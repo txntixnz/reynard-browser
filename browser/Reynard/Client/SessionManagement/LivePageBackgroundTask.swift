@@ -1,14 +1,20 @@
 import GeckoView
 import UIKit
 
-// A finite window for an already-open ChatGPT page. No periodic renewal,
-// audio playback, automatic reload, or keepalive after the user returns.
+// Protect an already-open ChatGPT page through long responses on entitled
+// TrollStore installs. Ordinary installs still use UIKit's finite allowance.
+// No periodic renewal, audio playback, automatic reload, or prompt replay.
 final class LivePageBackgroundTask {
     private var generation: UUID?
     private var taskIdentifier = UIBackgroundTaskIdentifier.invalid
     private var deadline: DispatchWorkItem?
     private var onEnd: (() -> Void)?
-    static let maximumDuration: TimeInterval = 180
+    static let ordinaryMaximumDuration: TimeInterval = 180
+    static let entitledMaximumDuration: TimeInterval = 2 * 60 * 60
+    static var maximumDuration: TimeInterval {
+        getEntitlementValue("com.apple.multitasking.unlimitedassertions")
+            ? entitledMaximumDuration : ordinaryMaximumDuration
+    }
 
     @discardableResult
     func start(onEnd: @escaping () -> Void) -> Bool {
@@ -40,8 +46,9 @@ final class LivePageBackgroundTask {
             stop()
         }
         self.deadline = deadline
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.maximumDuration, execute: deadline)
-        NSLog("Reynard: live-page background window requested (maximum 180 seconds)")
+        let duration = Self.maximumDuration
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: deadline)
+        NSLog("Reynard: live-page background window requested (maximum %.0f seconds)", duration)
         return true
     }
 
