@@ -9,13 +9,17 @@
 
 #import "mozilla-config.h"
 #import <dlfcn.h>
-#import <objc/runtime.h>
+#import <mach/mach.h>
 #import <unistd.h>
+#include <atomic>
 
-// Runtime-load private APIs only for entitled installs. RunningBoard signatures
-// and the WebKit Background domain come from WebKit's 2022 iOS implementation:
-// webkitgtk-2.38.0/Source/WebKit/{Platform/spi/ios/RunningBoardServicesSPI.h,
-// UIProcess/ios/ProcessAssertionIOS.mm}. Keep BKS only as an older-OS fallback.
+// Runtime-load private APIs only for entitled installs. These are NSExtension
+// processes, not Apple's WebKit services: a valid WebKit Background grant on
+// iOS 16 did not prevent the socket helper from being suspended. Request the
+// task-execution flag explicitly through RBSLegacyAttribute instead. Its
+// factory is used by udevsharold/bakgrunnur; the flags and unbounded finish-task
+// reason come from WebKit's f507bab/Platform/spi/ios/AssertionServicesSPI.h.
+// Retain BKS only as an older-OS fallback and bound lifetime at the owner level.
 @protocol RYNProcessAssertion <NSObject>
 - (BOOL)isValid;
 - (void)invalidate;
@@ -25,9 +29,12 @@
 + (instancetype)targetWithPid:(pid_t)pid;
 @end
 
-@protocol RYNRunningBoardAttribute <NSObject>
-+ (instancetype)attributeWithDomain:(NSString *)domain name:(NSString *)name;
+@protocol RYNRunningBoardTaskAttribute <NSObject>
++ (instancetype)attributeWithReason:(unsigned long long)reason flags:(unsigned long long)flags;
 @end
+
+static const unsigned long long kTaskExecutionFlags = 1 | 4; // PreventTaskSuspend | AllowIdleSleep
+static const unsigned long long kUnboundedFinishTaskReason = 10004;
 
 @protocol RYNRunningBoardAssertion <RYNProcessAssertion>
 - (instancetype)initWithExplanation:(NSString *)explanation target:(id)target attributes:(NSArray *)attributes;
@@ -43,6 +50,7 @@
 @interface GeckoRuntimeBridge ()
 + (void)beginBackgroundActivityForOwner:(NSString *)owner;
 + (void)endBackgroundActivityForOwner:(NSString *)owner;
++ (BOOL)hasCompleteBackgroundExecutionGrant;
 @end
 
 static NSMutableSet<NSNumber *> *sBackgroundProcesses;
@@ -51,11 +59,18 @@ static NSMutableSet<NSString *> *sBackgroundOwners;
 static NSMutableDictionary<NSNumber *, NSUUID *> *sPendingAssertions;
 static NSMutableArray<NSString *> *sDiagnosticEvents;
 static const NSUInteger kDiagnosticEventLimit = 240;
+static char sDiagnosticQueueKey;
+static std::atomic<uint64_t> sTaskInspectionGeneration { 0 };
 
-static NSString *sHeadlessHelperIdentifier;
-static NSHashTable *sHeadlessHelperExtensions;
-static BOOL sHeadlessLifecycleHookInstalled;
-static id (*sOriginalExtensionFactory)(id, SEL, NSString *, NSError **);
+static dispatch_queue_t DiagnosticQueue() {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("com.minh-ton.Reynard.connection-diagnostics", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(queue, &sDiagnosticQueueKey, &sDiagnosticQueueKey, NULL);
+    });
+    return queue;
+}
 
 static dispatch_queue_t AssertionQueue() {
     static dispatch_queue_t queue;
@@ -86,9 +101,9 @@ static void LoadDiagnosticEvents() {
 // request URLs, headers, cookies or credentials. Retain a bounded last session
 // across an OS termination, so a force quit does not erase the evidence.
 static void RecordDiagnostic(NSString *message) {
-    if (![NSThread isMainThread]) {
+    if (!dispatch_get_specific(&sDiagnosticQueueKey)) {
         NSString *copy = [message copy];
-        dispatch_async(dispatch_get_main_queue(), ^{ RecordDiagnostic(copy); });
+        dispatch_async(DiagnosticQueue(), ^{ RecordDiagnostic(copy); });
         return;
     }
     LoadDiagnosticEvents();
@@ -101,62 +116,37 @@ static void RecordDiagnostic(NSString *message) {
     [report writeToFile:DiagnosticLogPath() atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 
-// These Gecko processes use the AR-viewer extension point as a bootstrap;
-// they do not contain an extension UI. NSExtension's host background callbacks
-// synchronously contact that UI and can wait on an already-suspended helper.
-// LiveContainer removes the same two observers for its background processes:
-// 4dbe0f9/MultitaskSupport/AppSceneViewController.m, setWillResignActiveNotificationEnabled:.
-// Remove only those observers from exact helper objects returned by the
-// factory. Preserve unrelated extensions and all other lifecycle notifications.
-static void RemoveHeadlessHostBackgroundObservers(id extension) {
-    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
-    [center removeObserver:extension name:@"UIApplicationWillResignActiveNotification" object:nil];
-    [center removeObserver:extension name:@"UIApplicationDidEnterBackgroundNotification" object:nil];
+// Read task suspension state with existing access only. Do not suspend/resume
+// tasks, attach a debugger, read process memory, or request new permissions.
+// A denied task port is unknown state, never evidence of continued execution.
+static NSString *ProcessTaskStateDiagnostic(int32_t pid) {
+    if (pid <= 1) { return [NSString stringWithFormat:@"task-inspection pid=%d state=unknown invalid-pid", pid]; }
+    BOOL ownTask = pid == getpid();
+    mach_port_t task = mach_task_self();
+    kern_return_t result = ownTask ? KERN_SUCCESS : task_for_pid(mach_task_self(), pid, &task);
+    if (result != KERN_SUCCESS) {
+        return [NSString stringWithFormat:@"task-inspection pid=%d state=unknown task-port-unavailable kernelCode=%d", pid, result];
+    }
+    mach_task_basic_info_data_t info = {};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    result = task_info(task, MACH_TASK_BASIC_INFO, (task_info_t)&info, &count);
+    if (!ownTask) { mach_port_deallocate(mach_task_self(), task); }
+    if (result != KERN_SUCCESS) {
+        return [NSString stringWithFormat:@"task-inspection pid=%d state=unknown task-info-failed kernelCode=%d", pid, result];
+    }
+    return [NSString stringWithFormat:@"task-inspection pid=%d state=%@ suspendCount=%d",
+            pid, info.suspend_count > 0 ? @"suspended" : @"not-suspended", (int)info.suspend_count];
 }
 
-static id CreateHeadlessAwareExtension(id receiver, SEL selector, NSString *identifier, NSError **error) {
-    id extension = sOriginalExtensionFactory(receiver, selector, identifier, error);
-    if (extension && [identifier isEqualToString:sHeadlessHelperIdentifier]) {
-        @synchronized (sHeadlessHelperExtensions) {
-            [sHeadlessHelperExtensions addObject:extension];
-        }
-        RemoveHeadlessHostBackgroundObservers(extension);
-        RecordDiagnostic(@"headless helper created; host background observers removed");
-    }
-    return extension;
-}
-
-static void InstallHeadlessLifecycleHook() {
-    if (!sHeadlessHelperIdentifier || sHeadlessLifecycleHookInstalled) { return; }
-    Class extensionClass = NSClassFromString(@"NSExtension");
-    SEL selector = NSSelectorFromString(@"extensionWithIdentifier:error:");
-    Method method = extensionClass ? class_getClassMethod(extensionClass, selector) : NULL;
-    if (!method || method_getNumberOfArguments(method) != 4) { return; }
-    char returnType[8] = {}, identifierType[8] = {}, errorType[8] = {};
-    method_getReturnType(method, returnType, sizeof(returnType));
-    method_getArgumentType(method, 2, identifierType, sizeof(identifierType));
-    method_getArgumentType(method, 3, errorType, sizeof(errorType));
-    if (returnType[0] != '@' || identifierType[0] != '@' || errorType[0] != '^' || errorType[1] != '@') { return; }
-    sOriginalExtensionFactory = (id (*)(id, SEL, NSString *, NSError **))method_getImplementation(method);
-    Class metaClass = object_getClass(extensionClass);
-    // Add an override if the factory is inherited rather than changing its
-    // superclass. Repeated setup never wraps the replacement recursively.
-    if (!class_addMethod(metaClass, selector, (IMP)CreateHeadlessAwareExtension, method_getTypeEncoding(method))) {
-        method_setImplementation(method, (IMP)CreateHeadlessAwareExtension);
-    }
-    sHeadlessLifecycleHookInstalled = YES;
-    RecordDiagnostic(@"headless helper lifecycle hook installed");
-}
-
-static void PrepareHeadlessHelperLifecycle() {
-    InstallHeadlessLifecycleHook();
-    NSArray *extensions;
-    @synchronized (sHeadlessHelperExtensions) {
-        extensions = sHeadlessHelperExtensions.allObjects;
-    }
-    // Request startup may register observers again after the factory returns.
-    // Repeat removal when the child is ready and before the background window.
-    for (id extension in extensions) { RemoveHeadlessHostBackgroundObservers(extension); }
+static void ScheduleTaskInspection(NSArray<NSNumber *> *pids) {
+    uint64_t generation = sTaskInspectionGeneration.load();
+    // One observation before the 10-second scene watchdog, not a keepalive or
+    // renewal. It can be recorded while the UI thread is blocked in system IPC.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
+                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        if (sTaskInspectionGeneration.load() != generation) { return; }
+        for (NSNumber *pid in pids) { RecordDiagnostic(ProcessTaskStateDiagnostic(pid.intValue)); }
+    });
 }
 
 static void AcquireBackgroundAssertion(int32_t pid) {
@@ -176,21 +166,22 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 
     Class runningClass = NSClassFromString(@"RBSAssertion");
     Class targetClass = NSClassFromString(@"RBSTarget");
-    Class attributeClass = NSClassFromString(@"RBSDomainAttribute");
+    Class attributeClass = NSClassFromString(@"RBSLegacyAttribute");
     BOOL hasRunningBoard = runningClass && targetClass && attributeClass &&
         [targetClass respondsToSelector:@selector(targetWithPid:)] &&
-        [attributeClass respondsToSelector:@selector(attributeWithDomain:name:)] &&
+        [attributeClass respondsToSelector:@selector(attributeWithReason:flags:)] &&
         [runningClass instancesRespondToSelector:@selector(initWithExplanation:target:attributes:)] &&
         [runningClass instancesRespondToSelector:@selector(acquireWithError:)] &&
         [runningClass instancesRespondToSelector:@selector(isValid)] &&
         [runningClass instancesRespondToSelector:@selector(invalidate)];
     if (hasRunningBoard) {
         id target = [(Class<RYNRunningBoardTarget>)targetClass targetWithPid:pid];
-        id attribute = [(Class<RYNRunningBoardAttribute>)attributeClass attributeWithDomain:@"com.apple.webkit" name:@"Background"];
+        id attribute = [(Class<RYNRunningBoardTaskAttribute>)attributeClass attributeWithReason:kUnboundedFinishTaskReason flags:kTaskExecutionFlags];
         if (!target || !attribute) {
             RecordDiagnostic([NSString stringWithFormat:@"RunningBoard target/attribute creation failed pid=%d", pid]);
             return;
         }
+        RecordDiagnostic([NSString stringWithFormat:@"RunningBoard task request pid=%d attribute=%@", pid, attribute]);
         id<RYNRunningBoardAssertion> assertion = [(id<RYNRunningBoardAssertion>)[runningClass alloc]
             initWithExplanation:@"Reynard background network activity" target:target attributes:@[attribute]];
         if (!sPendingAssertions) { sPendingAssertions = [NSMutableDictionary dictionary]; }
@@ -204,7 +195,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
             BOOL acquired = [assertion acquireWithError:&error];
             dispatch_async(dispatch_get_main_queue(), ^{
                 BOOL valid = acquired && [assertion isValid];
-                RecordDiagnostic([NSString stringWithFormat:@"RunningBoard pid=%d acquired=%d valid=%d errorDomain=%@ code=%ld reason=%@",
+                RecordDiagnostic([NSString stringWithFormat:@"RunningBoard task-unbounded pid=%d acquired=%d valid=%d errorDomain=%@ code=%ld reason=%@",
                                   pid, acquired, valid, error.domain ?: @"none", (long)error.code, error.localizedFailureReason ?: error.localizedDescription ?: @"none"]);
                 if (sPendingAssertions[@(pid)] != request || sBackgroundOwners.count == 0) {
                     [assertion invalidate];
@@ -234,7 +225,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     // PreventTaskSuspend | AllowIdleSleep. Do not request foreground GPU/UI
     // priority or keep the screen awake while continuing the page's network work.
     id<RYNBackgroundAssertion> assertion = [(id<RYNBackgroundAssertion>)[assertionClass alloc]
-        initWithPID:pid flags:5 reason:10004 name:@"Reynard network activity"
+        initWithPID:pid flags:(unsigned int)kTaskExecutionFlags reason:(unsigned int)kUnboundedFinishTaskReason name:@"Reynard network activity"
         withHandler:^(BOOL acquired) {
             NSLog(@"Reynard: background assertion PID %d %@", pid,
                   acquired ? @"acquired" : @"denied");
@@ -245,19 +236,6 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 }
 
 @implementation GeckoRuntimeBridge
-
-+ (void)configureHeadlessExtensionLifecycle:(NSString *)helperIdentifier {
-    NSAssert([NSThread isMainThread], @"Headless lifecycle setup must use the main thread");
-    if (helperIdentifier.length == 0) { return; }
-    // Configured once by the entitled host before it launches Gecko helpers.
-    if (sHeadlessHelperIdentifier) {
-        if ([sHeadlessHelperIdentifier isEqualToString:helperIdentifier]) { InstallHeadlessLifecycleHook(); }
-        return;
-    }
-    sHeadlessHelperIdentifier = [helperIdentifier copy];
-    if (!sHeadlessHelperExtensions) { sHeadlessHelperExtensions = [NSHashTable weakObjectsHashTable]; }
-    InstallHeadlessLifecycleHook();
-}
 
 + (void)recordDiagnostic:(NSString *)message {
     RecordDiagnostic(message);
@@ -270,8 +248,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     [parts addObject:[NSString stringWithFormat:@"owners=%@ hostAssertion=%@",
                       owners.length ? owners : @"none",
                       [sBackgroundAssertions[@(getpid())] isValid] ? @"valid" : sPendingAssertions[@(getpid())] ? @"pending" : @"absent-or-invalid"]];
-    [parts addObject:[NSString stringWithFormat:@"headlessLifecycle=%@",
-                      sHeadlessLifecycleHookInstalled ? @"installed" : sHeadlessHelperIdentifier ? @"unavailable" : @"off"]];
+    [parts addObject:@"requestedPolicy=prevent-task-suspend"];
     for (NSNumber *pid in [sBackgroundProcesses.allObjects sortedArrayUsingSelector:@selector(compare:)]) {
         [parts addObject:[NSString stringWithFormat:@"child=%@ assertion=%@", pid,
                           [sBackgroundAssertions[pid] isValid] ? @"valid" : sPendingAssertions[pid] ? @"pending" : @"absent-or-invalid"]];
@@ -281,9 +258,13 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 
 + (NSString *)diagnosticReport {
     NSAssert([NSThread isMainThread], @"Diagnostics export must use the main thread");
-    LoadDiagnosticEvents();
+    __block NSString *events;
+    dispatch_sync(DiagnosticQueue(), ^{
+        LoadDiagnosticEvents();
+        events = [sDiagnosticEvents componentsJoinedByString:@"\n"];
+    });
     return [NSString stringWithFormat:@"Current state: %@\n\nRecent lifecycle events:\n%@\n",
-            [self backgroundDiagnosticSnapshot], [sDiagnosticEvents componentsJoinedByString:@"\n"]];
+            [self backgroundDiagnosticSnapshot], events];
 }
 
 + (NSString *)version {
@@ -293,10 +274,12 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 + (void)registerBackgroundProcess:(int32_t)pid {
     NSAssert([NSThread isMainThread], @"Background process registry must use the main thread");
     if (pid <= 1) { return; }
-    PrepareHeadlessHelperLifecycle();
     if (!sBackgroundProcesses) { sBackgroundProcesses = [NSMutableSet set]; }
     [sBackgroundProcesses addObject:@(pid)];
-    if (sBackgroundOwners.count > 0) { AcquireBackgroundAssertion(pid); }
+    if (sBackgroundOwners.count > 0) {
+        AcquireBackgroundAssertion(pid);
+        ScheduleTaskInspection(@[@(pid)]);
+    }
 }
 
 + (void)removeBackgroundProcess:(int32_t)pid {
@@ -317,7 +300,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 
 + (void)beginBackgroundActivityForOwner:(NSString *)owner {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
-    PrepareHeadlessHelperLifecycle();
+    BOOL firstOwner = sBackgroundOwners.count == 0;
     if (!sBackgroundOwners) { sBackgroundOwners = [NSMutableSet set]; }
     [sBackgroundOwners addObject:owner];
     if (!sBackgroundAssertions) { sBackgroundAssertions = [NSMutableDictionary dictionary]; }
@@ -325,11 +308,26 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     for (NSNumber *pid in sBackgroundProcesses) {
         AcquireBackgroundAssertion(pid.intValue);
     }
+    if (firstOwner) {
+        sTaskInspectionGeneration.fetch_add(1);
+        ScheduleTaskInspection([@[@(getpid())] arrayByAddingObjectsFromArray:sBackgroundProcesses.allObjects ?: @[]]);
+    }
 }
 
 + (BOOL)hasBackgroundGrace {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
-    return [sBackgroundOwners containsObject:@"live-page"] && [sBackgroundAssertions[@(getpid())] isValid];
+    return [sBackgroundOwners containsObject:@"live-page"] && [self hasCompleteBackgroundExecutionGrant];
+}
+
++ (BOOL)hasCompleteBackgroundExecutionGrant {
+    if (![sBackgroundAssertions[@(getpid())] isValid]) { return NO; }
+    // A host-only grant cannot keep the page or socket runtime executing.
+    // If any required helper is denied, use the finite UIKit fallback rather
+    // than retaining only the host after that fallback expires.
+    for (NSNumber *pid in sBackgroundProcesses) {
+        if (![sBackgroundAssertions[pid] isValid]) { return NO; }
+    }
+    return YES;
 }
 
 + (void)endBackgroundGrace {
@@ -338,7 +336,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 
 + (BOOL)hasBackgroundDownloadGrace {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
-    return [sBackgroundOwners containsObject:@"downloads"] && [sBackgroundAssertions[@(getpid())] isValid];
+    return [sBackgroundOwners containsObject:@"downloads"] && [self hasCompleteBackgroundExecutionGrant];
 }
 
 + (void)endBackgroundDownloadGrace {
@@ -349,6 +347,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
     [sBackgroundOwners removeObject:owner];
     if (sBackgroundOwners.count > 0) { return; }
+    sTaskInspectionGeneration.fetch_add(1);
     [sPendingAssertions removeAllObjects];
     for (id<RYNProcessAssertion> assertion in sBackgroundAssertions.allValues) {
         [assertion invalidate];

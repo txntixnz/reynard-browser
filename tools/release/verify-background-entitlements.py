@@ -8,6 +8,10 @@ import tempfile
 import zipfile
 
 KEY = "com.apple.runningboard.assertions.webkit"
+HOST_EXECUTION_KEYS = (
+    "com.apple.multitasking.unlimitedassertions",
+    "com.apple.multitasking.systemappassertions",
+)
 EXECUTABLES = {
     "host": "Payload/Reynard.app/Reynard",
     "Gecko helper": "Payload/Reynard.app/PlugIns/Reynard Helper.appex/Reynard Helper",
@@ -16,8 +20,10 @@ EXECUTABLES = {
 
 def validate_entitlements(entitlements):
     for role in EXECUTABLES:
-        if entitlements.get(role, {}).get(KEY) is not True:
-            raise RuntimeError(f"Signed {role} is missing required RunningBoard entitlement: {KEY}")
+        keys = (KEY, *HOST_EXECUTION_KEYS) if role == "host" else (KEY,)
+        for key in keys:
+            if entitlements.get(role, {}).get(key) is not True:
+                raise RuntimeError(f"Signed {role} is missing required background entitlement: {key}")
 
 
 def verify_package(package):
@@ -31,7 +37,7 @@ def verify_package(package):
             result = subprocess.run(["ldid", "-e", str(binary)], check=True, capture_output=True)
             entitlements[role] = plistlib.loads(result.stdout)
     validate_entitlements(entitlements)
-    print("PASS: final signed TrollStore host AND Gecko helper have the RunningBoard entitlement")
+    print("PASS: final signed TrollStore host has task-execution permissions AND host/helper background permissions are present")
 
 
 if __name__ == "__main__":

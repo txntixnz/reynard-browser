@@ -13,7 +13,6 @@
 @interface GeckoRuntimeBridge : NSObject
 
 + (NSString *)version;
-+ (void)configureHeadlessExtensionLifecycle:(NSString *)helperIdentifier;
 + (void)registerBackgroundProcess:(int32_t)pid;
 + (void)removeBackgroundProcess:(int32_t)pid;
 + (void)beginBackgroundGrace;

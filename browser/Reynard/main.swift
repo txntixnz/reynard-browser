@@ -76,16 +76,10 @@ private func configureSandboxExtension() {
 LocalizationBundle.activate()
 JITController.shared.start()
 
-// Gecko's AppShellDelegate owns UIApplicationMain, so startup diagnostics and
-// setup belong here rather than the unused Swift AppDelegate.
+// Gecko's AppShellDelegate owns UIApplicationMain. Record startup here so a
+// watchdog relaunch can be distinguished from an ordinary foreground return.
 let diagnosticBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
 GeckoRuntime.recordDiagnostic("host startup pid=\(ProcessInfo.processInfo.processIdentifier) build=\(diagnosticBuild)")
-if getEntitlementValue("com.apple.multitasking.unlimitedassertions"),
-   getEntitlementValue("com.apple.runningboard.assertions.webkit"),
-   let helperURL = Bundle.main.builtInPlugInsURL?.appendingPathComponent("Reynard Helper.appex"),
-   let helperIdentifier = Bundle(url: helperURL)?.bundleIdentifier {
-    GeckoRuntime.configureHeadlessExtensionLifecycle(helperIdentifier: helperIdentifier)
-}
 _ = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
     GeckoRuntime.recordDiagnostic("UIKit memory warning")
 }

@@ -16,7 +16,8 @@ enum ConnectionDiagnosticsController {
         This report records app lifecycle, OS assertion results and child-process
         exits. It does not record chat text, request URLs, headers, cookies or tokens.
         Page-load events describe navigation, not individual ChatGPT API requests.
-        An assertion being valid does not prove that a service request completed.
+        An assertion being valid does not prove that a process kept executing
+        or that a service request completed.
 
         \(GeckoRuntime.diagnosticReport)
         """

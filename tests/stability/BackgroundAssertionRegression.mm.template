@@ -1,8 +1,9 @@
 #import <Foundation/Foundation.h>
 #import "GeckoRuntimeBridge.h"
 #import <dlfcn.h>
-#import <objc/runtime.h>
+#import <mach/mach.h>
 #import <unistd.h>
+#include <atomic>
 
 static NSMutableArray *created;
 static BOOL permitted = YES;
@@ -10,33 +11,7 @@ static BOOL runningAvailable = YES;
 static BOOL legacyAvailable = NO;
 static BOOL incompleteRunningAPI = NO;
 static NSNumber *deniedTarget;
-static BOOL extensionFactoryAvailable = YES;
-static BOOL failExtensionFactory = NO;
-
-@interface RYNTestHeadlessExtension : NSObject
-@property NSUInteger backgroundCalls;
-@property NSUInteger foregroundCalls;
-+ (instancetype)extensionWithIdentifier:(NSString *)identifier error:(NSError **)error;
-- (void)registerHostNotifications;
-@end
-@implementation RYNTestHeadlessExtension
-+ (instancetype)extensionWithIdentifier:(NSString *)identifier error:(NSError **)error {
-    if (failExtensionFactory) {
-        if (error) { *error = [NSError errorWithDomain:@"test-extension" code:7 userInfo:nil]; }
-        return nil;
-    }
-    RYNTestHeadlessExtension *extension = [self new];
-    [extension registerHostNotifications];
-    [NSNotificationCenter.defaultCenter addObserver:extension selector:@selector(foreground:) name:@"UIApplicationDidBecomeActiveNotification" object:nil];
-    return extension;
-}
-- (void)registerHostNotifications {
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(background:) name:@"UIApplicationWillResignActiveNotification" object:nil];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(background:) name:@"UIApplicationDidEnterBackgroundNotification" object:nil];
-}
-- (void)background:(NSNotification *)note { self.backgroundCalls++; }
-- (void)foreground:(NSNotification *)note { self.foregroundCalls++; }
-@end
+static BOOL taskAttributeAvailable = YES;
 
 @interface RYNTestAssertionBase : NSObject
 @property BOOL valid;
@@ -60,11 +35,11 @@ static BOOL failExtensionFactory = NO;
 @end
 
 @interface RYNTestAttribute : NSObject
-+ (instancetype)attributeWithDomain:(NSString *)domain name:(NSString *)name;
++ (instancetype)attributeWithReason:(unsigned long long)reason flags:(unsigned long long)flags;
 @end
 @implementation RYNTestAttribute
-+ (instancetype)attributeWithDomain:(NSString *)domain name:(NSString *)name {
-    NSCAssert([domain isEqual:@"com.apple.webkit"] && [name isEqual:@"Background"], @"Unexpected RunningBoard scope");
++ (instancetype)attributeWithReason:(unsigned long long)reason flags:(unsigned long long)flags {
+    NSCAssert(reason == 10004 && flags == 5, @"Request task suspension prevention and idle sleep without foreground resource priority");
     return [self new];
 }
 @end
@@ -101,64 +76,15 @@ static BOOL failExtensionFactory = NO;
 @end
 
 static Class TestAssertionClass(NSString *name) {
-    if ([name isEqual:@"NSExtension"]) { return extensionFactoryAvailable ? [RYNTestHeadlessExtension class] : Nil; }
     if ([name isEqual:@"BKSProcessAssertion"]) { return legacyAvailable ? [RYNTestLegacyAssertion class] : Nil; }
     if (!runningAvailable) { return Nil; }
     if ([name isEqual:@"RBSAssertion"]) { return incompleteRunningAPI ? [NSObject class] : [RYNTestRunningAssertion class]; }
     if ([name isEqual:@"RBSTarget"]) { return [RYNTestTarget class]; }
-    if ([name isEqual:@"RBSDomainAttribute"]) { return [RYNTestAttribute class]; }
+    if ([name isEqual:@"RBSLegacyAttribute"]) { return taskAttributeAvailable ? [RYNTestAttribute class] : Nil; }
     return Nil;
 }
 
 // BRIDGE_SOURCE
-
-static void PostHostBackgroundNotifications() {
-    [NSNotificationCenter.defaultCenter postNotificationName:@"UIApplicationWillResignActiveNotification" object:nil];
-    [NSNotificationCenter.defaultCenter postNotificationName:@"UIApplicationDidEnterBackgroundNotification" object:nil];
-}
-
-static void TestHeadlessExtensionLifecycle() {
-    // No configuration on ordinary installs: do not change any factory or observer.
-    RYNTestHeadlessExtension *ordinary = [RYNTestHeadlessExtension extensionWithIdentifier:@"test.helper" error:NULL];
-    PostHostBackgroundNotifications();
-    NSCAssert(ordinary.backgroundCalls == 2, @"Ordinary installs retain extension lifecycle callbacks");
-    [NSNotificationCenter.defaultCenter removeObserver:ordinary];
-
-    extensionFactoryAvailable = NO;
-    [GeckoRuntimeBridge configureHeadlessExtensionLifecycle:@"test.helper"];
-    NSCAssert([[GeckoRuntimeBridge backgroundDiagnosticSnapshot] containsString:@"headlessLifecycle=unavailable"], @"Missing extension API must remain visible without calling it");
-    extensionFactoryAvailable = YES;
-    [GeckoRuntimeBridge configureHeadlessExtensionLifecycle:@"test.helper"];
-    NSCAssert([[GeckoRuntimeBridge backgroundDiagnosticSnapshot] containsString:@"headlessLifecycle=installed"], @"Retry once the extension API is loaded");
-
-    RYNTestHeadlessExtension *helper = [RYNTestHeadlessExtension extensionWithIdentifier:@"test.helper" error:NULL];
-    RYNTestHeadlessExtension *other = [RYNTestHeadlessExtension extensionWithIdentifier:@"test.OpenIn" error:NULL];
-    PostHostBackgroundNotifications();
-    NSCAssert(helper.backgroundCalls == 0 && other.backgroundCalls == 2, @"Only headless helper callbacks bypass the suspended-peer path");
-    [NSNotificationCenter.defaultCenter postNotificationName:@"UIApplicationDidBecomeActiveNotification" object:nil];
-    NSCAssert(helper.foregroundCalls == 1 && other.foregroundCalls == 1, @"Foreground callbacks remain intact for every extension");
-
-    [helper registerHostNotifications];
-    [GeckoRuntimeBridge registerBackgroundProcess:42001];
-    PostHostBackgroundNotifications();
-    NSCAssert(helper.backgroundCalls == 0 && other.backgroundCalls == 4, @"Strip helper observers registered later during request startup");
-    [GeckoRuntimeBridge configureHeadlessExtensionLifecycle:@"test.helper"];
-    RYNTestHeadlessExtension *second = [RYNTestHeadlessExtension extensionWithIdentifier:@"test.helper" error:NULL];
-    PostHostBackgroundNotifications();
-    NSCAssert(second.backgroundCalls == 0, @"Repeated setup must not recursively wrap the factory");
-
-    failExtensionFactory = YES;
-    NSError *error = nil;
-    NSCAssert([RYNTestHeadlessExtension extensionWithIdentifier:@"test.helper" error:&error] == nil && error.code == 7, @"Preserve original factory errors");
-    failExtensionFactory = NO;
-    __weak id weakExtension;
-    @autoreleasepool {
-        id temporary = [RYNTestHeadlessExtension extensionWithIdentifier:@"test.helper" error:NULL];
-        weakExtension = temporary;
-    }
-    NSCAssert(weakExtension == nil, @"The lifecycle hook must not retain completed extension objects");
-    NSLog(@"PASS: headless lifecycle, ordinary installs, API retry, unrelated extensions, foreground, late registration, repeated setup, factory error and weak ownership");
-}
 
 static void DrainAssertions() {
     dispatch_sync(AssertionQueue(), ^{});
@@ -173,13 +99,24 @@ static void DrainAssertions() {
 
 int main() {
     @autoreleasepool {
-        TestHeadlessExtensionLifecycle();
+        NSCAssert([ProcessTaskStateDiagnostic(getpid()) containsString:@"state=not-suspended suspendCount=0"], @"Calibrate task inspection against the executing current process");
+        NSCAssert([ProcessTaskStateDiagnostic(0) containsString:@"state=unknown"], @"Failed inspection must not be presented as execution");
+        NSCAssert([ProcessTaskStateDiagnostic(INT32_MAX) containsString:@"state=unknown"], @"An unavailable task port must not report a running process");
+        dispatch_semaphore_t recorded = dispatch_semaphore_create(0);
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            RecordDiagnostic(@"worker diagnostic while UI thread is blocked");
+            dispatch_sync(DiagnosticQueue(), ^{});
+            dispatch_semaphore_signal(recorded);
+        });
+        NSCAssert(dispatch_semaphore_wait(recorded, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0, @"Diagnostic persistence must not wait for the UI thread");
+        NSString *onDisk = [NSString stringWithContentsOfFile:DiagnosticLogPath() encoding:NSUTF8StringEncoding error:NULL];
+        NSCAssert([onDisk containsString:@"worker diagnostic while UI thread is blocked"], @"Persist worker evidence before a watchdog kill");
         created = [NSMutableArray array];
         [GeckoRuntimeBridge registerBackgroundProcess:0];
         [GeckoRuntimeBridge registerBackgroundProcess:42001];
         [GeckoRuntimeBridge beginBackgroundGrace];
         DrainAssertions();
-        NSCAssert(created.count == 2 && [GeckoRuntimeBridge hasBackgroundGrace], @"RunningBoard must work when the legacy BKS class is absent");
+        NSCAssert(created.count == 2 && [GeckoRuntimeBridge hasBackgroundGrace], @"Task-execution assertions must work without BKS or WebKit-domain attributes");
         NSCAssert([created[0] isKindOfClass:[RYNTestRunningAssertion class]], @"Use RunningBoard instead of legacy BKS");
         NSString *snapshot = [GeckoRuntimeBridge backgroundDiagnosticSnapshot];
         NSCAssert([snapshot containsString:@"hostAssertion=valid"] && [snapshot containsString:@"child=42001 assertion=valid"], @"Diagnostic snapshot must distinguish host and child grants");
@@ -191,6 +128,7 @@ int main() {
         DrainAssertions();
         NSCAssert(created.count == 3 && [GeckoRuntimeBridge hasBackgroundGrace], @"A stale invalid assertion must not block a later acquisition");
         [GeckoRuntimeBridge registerBackgroundProcess:42002];
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"A pending helper must not be described as complete private protection");
         DrainAssertions();
         NSCAssert(created.count == 4, @"New child must join existing background window");
         [GeckoRuntimeBridge removeBackgroundProcess:42001];
@@ -215,6 +153,11 @@ int main() {
         DrainAssertions();
         NSString *partial = [GeckoRuntimeBridge backgroundDiagnosticSnapshot];
         NSCAssert([partial containsString:@"hostAssertion=valid"] && [partial containsString:@"child=42002 assertion=absent-or-invalid"], @"A valid host must not hide a rejected helper in diagnostics");
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"A host-only grant must leave the page on finite fallback");
+        [GeckoRuntimeBridge beginBackgroundDownloadGrace];
+        DrainAssertions();
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundDownloadGrace], @"Downloads also require complete helper protection");
+        [GeckoRuntimeBridge endBackgroundDownloadGrace];
         [GeckoRuntimeBridge endBackgroundGrace];
         deniedTarget = nil;
 
@@ -228,7 +171,17 @@ int main() {
         [GeckoRuntimeBridge endBackgroundGrace];
 
         permitted = YES;
+        taskAttributeAvailable = NO;
+        legacyAvailable = NO;
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        DrainAssertions();
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"An unavailable task attribute must not fall back to a valid-but-ineffective WebKit grant");
+        NSCAssert([[GeckoRuntimeBridge diagnosticReport] containsString:@"RunningBoard API unavailable assertionClass=1 targetClass=1 attributeClass=0"], @"Report the missing task-execution attribute");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        taskAttributeAvailable = YES;
+
         runningAvailable = NO;
+        legacyAvailable = YES;
         [GeckoRuntimeBridge beginBackgroundGrace];
         DrainAssertions();
         NSCAssert([GeckoRuntimeBridge hasBackgroundGrace] && [created.lastObject isKindOfClass:[RYNTestLegacyAssertion class]], @"Older OS can use the available legacy fallback");
@@ -258,7 +211,7 @@ int main() {
         for (NSUInteger i = 0; i < 245; ++i) { [GeckoRuntimeBridge recordDiagnostic:[NSString stringWithFormat:@"bounded-test-%lu", (unsigned long)i]]; }
         NSString *report = [GeckoRuntimeBridge diagnosticReport];
         NSCAssert(![report containsString:@"bounded-test-0\n"] && [report containsString:@"bounded-test-244"], @"Export must retain bounded recent events");
-        NSLog(@"PASS: RunningBoard without BKS, denial, API unavailability, reacquisition, ownership and cleanup");
+        NSLog(@"PASS: task-state inspection, diagnostics with blocked UI, explicit execution policy, complete host/helper protection, denial, API unavailability, reacquisition, ownership and cleanup");
     }
     return 0;
 }

@@ -1,3 +1,63 @@
+## Observer candidate failed; request task suspension prevention directly (2026-10-14)
+
+Latest device attachments, inspected directly from scratch:
+- Reynard-Connection-Diagnostics(4).txt: App 0.17.1 (d2e80b8)
+- Reynard-2026-10-14-191735.ips: host 26345, socket helper 26346
+
+Workflow 38603554082 SUCCEEDED. The d2e80b8 lifecycle hook DID install before
+the socket started, and logged capture/removal for that helper. It still failed:
+same scene-update watchdog 0x8badf00d, host MainThread on the extension global-state
+queue waiting through mach_msg on suspended socket helper 26346. Do not claim the
+observer approach worked or ask the user which build or whether they force quit.
+The user already explicitly denied killing the app.
+
+This same host returned normally from a background interval 17:16:29 -> 17:16:47
+UTC before a private execution grant was requested. After starting live-page
+grants at 17:17:14, it was watchdog-killed at 17:17:35. This comparison suggests
+the private execution policy is involved; it does not by itself prove causality.
+WebKit Background grants had acquired=1 valid=1 while the NSExtension socket task
+was actually suspended. The mock tests proved grant bookkeeping only.
+
+New candidate removes the ineffective factory/notification interception entirely,
+restoring normal extension observers. Keep actual main.swift PID/build startup
+and memory-warning notification diagnostics (the Swift AppDelegate is unused).
+
+Replace the WebKit-specific Background attribute with RBSLegacyAttribute's known
+attributeWithReason:flags: factory, using FinishTaskUnbounded 10004 and
+PreventTaskSuspend | AllowIdleSleep (1 | 4 = 5). This is a modern RBSAssertion;
+it does NOT require the unavailable BKS class. Original WebKit flags/reason source:
+https://github.com/WebKit/WebKit/blob/f507bab0478effbe6d650f5442426be2d17613be/Source/WebKit/Platform/spi/ios/AssertionServicesSPI.h
+The RBSLegacyAttribute factory is used by primary udevsharold/bakgrunnur source.
+Runtime guards retain the finite UIKit/BKS fallback if APIs are absent; do not
+substitute the known ineffective WebKit-domain grant or mask an explicit denial.
+Keep acquisition off the UI thread, pending tokens, owner overlap and cleanup.
+
+Private page/download protection now requires valid host AND every registered
+content/socket grant, so a rejected/pending helper cannot cause a host-only
+keepalive after UIKit fallback expires. New native cases verify that policy and
+the explicit task attribute/flags. Signed-package verification also checks the
+host's existing unlimitedassertions + systemappassertions permissions, in addition
+to both host/helper background signing profiles. No new signing permission added.
+
+This remains an on-device candidate. Acceptance of a new attribute will not prove
+continued execution. Expect new logs prefixed "RunningBoard task-unbounded", same
+host PID across background/return, and background checkpoints without a watchdog.
+
+Diagnostics now persist on their own serial queue rather than the UI thread, so
+a blocked main thread cannot prevent collection before the 10-second watchdog.
+A cancellable, one-shot observation after 3 seconds reads Mach task suspend_count
+for the host and known content/socket helpers using EXISTING task-port access.
+No new entitlement, debugger attachment, task suspend/resume or process memory
+read. Denied access is recorded as UNKNOWN, not running. This does not renew any
+assertion or keep the app alive. Native regression checks persistence while the
+UI thread waits and calibrates inspection against its currently executing task.
+
+Workflow/artifact: iOS 16 - 0.17.1 Task Suspension Fix /
+Reynard-0.17.1-Task-Suspension-Fix-TrollStore (Reynard-TrollStore.tipa).
+Engine/patches stay exactly official 0.17.1. User reports completion; no whole-run
+monitoring or four-hour Gecko rebuild. HTTP/3 was enabled by the user; do not
+reset it or blame low-power mode (previous crashes occurred with it OFF too).
+
 ## Watchdog kills host while socket helper is suspended (2026-10-14)
 
 User explicitly confirms Reynard restarts on every app switch WITHOUT a force quit.

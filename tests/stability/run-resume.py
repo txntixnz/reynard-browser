@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="reynard-resume-") as tmp:
     bridge = bridge[bridge.index("@protocol RYNProcessAssertion"):].replace("@MOZILLA_VERSION", '@"test"')
     # macOS also ships the real private framework. Use a uniquely named test
     # class so dlopen cannot replace/collide with the controlled API double.
-    for class_name in ["BKSProcessAssertion", "RBSAssertion", "RBSTarget", "RBSDomainAttribute", "NSExtension"]:
+    for class_name in ["BKSProcessAssertion", "RBSAssertion", "RBSTarget", "RBSLegacyAttribute"]:
         bridge = bridge.replace(f'NSClassFromString(@"{class_name}")', f'TestAssertionClass(@"{class_name}")')
     native_file = Path(tmp) / "assertions.mm"
     native_file.write_text((ROOT / "tests/stability/BackgroundAssertionRegression.mm.template").read_text().replace("// BRIDGE_SOURCE", bridge))
