@@ -1,3 +1,41 @@
+## RunningBoard host succeeds; helper permission omitted (2026-10-14)
+
+User installed ed1e557 from workflow 38592106088 (SUCCEEDED) and attached
+Reynard-Connection-Diagnostics(1).txt plus 47.7-second video
+01-RPReplay_Final1791993526.mp4. Both were inspected directly from scratch.
+The clip shows a persistent blank conversation/loading spinner through switching
+from this chat to Continue PS3 Porting, including while app is foreground.
+
+The log retains OLD b6d5a9f history. New events begin 15:57:27 UTC with new PIDs.
+At 15:57:52 RunningBoard loads and the HOST pid 25348 gets acquired=1 valid=1.
+Every registered content/socket target is denied with RBSServiceErrorDomain code1:
+"target is not running or doesn't have entitlement com.apple.runningboard.assertions.webkit".
+Host remains valid in repeated requests; children never receive grants. The
+helper private entitlement plist indeed lacks that key. We added it only to the
+host in the previous candidate: this is another concrete implementation omission.
+Do not infer old BKS lines mean the new API is still unavailable or ask build again.
+
+New candidate adds that same RunningBoard permission to the Gecko helper's PRIVATE
+profile. All Gecko content/socket roles run through Reynard Helper.appex, which
+create-ipa.sh signs with this profile. The ordinary helper profile and OpenIn share
+extension are unchanged. Engine/native typing and connection policy are unchanged.
+
+Added a post-packaging check that extracts the ACTUAL two signed executables from
+the final TIPA and parses ldid -e output for the permission in BOTH host and helper.
+CI refuses to upload an artifact with host-only, helper-only, absent or ambiguous
+executables. Local tests reject the precise host-only combination found on device.
+Native fixture now also covers host valid with child denied, with distinct snapshots.
+
+This fixes the known signing omission; sustained execution and the foreground
+loading/missing-message problem still require a device retest. No speculative
+cache clearing, auto reload or prompt replay. After installing, export diagnostics
+after at least 1 minute background; expect acquired=1 valid=1 for host AND content/
+socket children and continued checkpoints. A valid host alone is insufficient.
+
+Workflow/artifact: iOS 16 - 0.17.1 Host and Helper Background Fix /
+Reynard-0.17.1-Host-Helper-Fix-TrollStore, contains Reynard-TrollStore.tipa.
+User reports workflow finish. No native engine rebuild or whole-run monitoring.
+
 ## Device log identifies unavailable background API (2026-10-14)
 
 User attached Reynard-Connection-Diagnostics.txt (read directly from scratch upload).

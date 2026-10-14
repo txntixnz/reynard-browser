@@ -1,4 +1,4 @@
-name: iOS 16 - 0.17.1 RunningBoard Background Fix
+name: iOS 16 - 0.17.1 Host and Helper Background Fix
 
 on:
   push:
@@ -28,6 +28,7 @@ jobs:
         run: |
           python3 tests/stability/run.py --released-engine
           python3 tests/stability/run-downloads.py
+          python3 tests/stability/test-background-entitlements.py
       - name: Install packaging dependencies
         run: brew install ldid python@3.12
       - name: Prepare unchanged verified 0.17.1 engine
@@ -55,8 +56,10 @@ jobs:
         run: ./tools/release/build-app.sh --no-signing
       - name: Package TrollStore TIPA
         run: ./tools/release/create-ipa.sh --trollstore
+      - name: Verify permissions in the actual signed host and helper
+        run: python3 tools/release/verify-background-entitlements.py dist/Reynard-TrollStore.tipa
       - uses: actions/upload-artifact@v4
         with:
-          name: Reynard-0.17.1-RunningBoard-Fix-TrollStore
+          name: Reynard-0.17.1-Host-Helper-Fix-TrollStore
           path: dist/Reynard-TrollStore.tipa
           if-no-files-found: error

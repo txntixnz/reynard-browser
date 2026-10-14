@@ -8,6 +8,7 @@ static BOOL permitted = YES;
 static BOOL runningAvailable = YES;
 static BOOL legacyAvailable = NO;
 static BOOL incompleteRunningAPI = NO;
+static NSNumber *deniedTarget;
 
 @interface RYNTestAssertionBase : NSObject
 @property BOOL valid;
@@ -51,9 +52,9 @@ static BOOL incompleteRunningAPI = NO;
     return self;
 }
 - (BOOL)acquireWithError:(NSError **)error {
-    self.valid = permitted;
-    if (!permitted && error) { *error = [NSError errorWithDomain:@"RBSAssertionErrorDomain" code:2 userInfo:@{NSLocalizedDescriptionKey: @"test denial"}]; }
-    return permitted;
+    self.valid = permitted && (!deniedTarget || self.pid != deniedTarget.intValue);
+    if (!self.valid && error) { *error = [NSError errorWithDomain:@"RBSAssertionErrorDomain" code:2 userInfo:@{NSLocalizedDescriptionKey: @"test denial"}]; }
+    return self.valid;
 }
 @end
 
@@ -130,6 +131,14 @@ int main() {
         [GeckoRuntimeBridge endBackgroundDownloadGrace];
         NSCAssert([GeckoRuntimeBridge hasBackgroundGrace] && ![GeckoRuntimeBridge hasBackgroundDownloadGrace], @"Download ending must not suspend page");
         [GeckoRuntimeBridge endBackgroundGrace];
+
+        deniedTarget = @42002;
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        DrainAssertions();
+        NSString *partial = [GeckoRuntimeBridge backgroundDiagnosticSnapshot];
+        NSCAssert([partial containsString:@"hostAssertion=valid"] && [partial containsString:@"child=42002 assertion=absent-or-invalid"], @"A valid host must not hide a rejected helper in diagnostics");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        deniedTarget = nil;
 
         permitted = NO;
         legacyAvailable = YES;

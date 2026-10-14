@@ -12,5 +12,7 @@
     <true/>
 	<key>platform-application</key>
     <true/>
+    <key>com.apple.runningboard.assertions.webkit</key>
+    <true/>
 </dict>
 </plist>
