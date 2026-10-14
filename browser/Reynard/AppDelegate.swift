@@ -6,10 +6,13 @@
 //
 
 import UIKit
+import GeckoView
 
 class AppDelegate: UIResponder, UIApplicationDelegate {
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        GeckoRuntime.recordDiagnostic("app launched build=\(build) iOS=\(UIDevice.current.systemVersion)")
         JITController.shared.startBackgroundAudioIfNeeded()
         return true
     }
@@ -19,4 +22,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
     
     func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {}
+
+    func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
+        GeckoRuntime.recordDiagnostic("UIKit memory warning")
+    }
 }

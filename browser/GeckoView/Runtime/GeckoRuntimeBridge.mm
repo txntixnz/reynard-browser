@@ -31,6 +31,45 @@
 static NSMutableSet<NSNumber *> *sBackgroundProcesses;
 static NSMutableDictionary<NSNumber *, id<RYNBackgroundAssertion>> *sBackgroundAssertions;
 static NSMutableSet<NSString *> *sBackgroundOwners;
+static NSMutableArray<NSString *> *sDiagnosticEvents;
+static const NSUInteger kDiagnosticEventLimit = 240;
+
+static NSString *DiagnosticLogPath() {
+    NSString *directory = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
+    return [directory stringByAppendingPathComponent:@"ReynardConnectionDiagnostics.log"];
+}
+
+static void LoadDiagnosticEvents() {
+    if (sDiagnosticEvents) { return; }
+    sDiagnosticEvents = [NSMutableArray array];
+    NSString *previous = [NSString stringWithContentsOfFile:DiagnosticLogPath()
+                                                 encoding:NSUTF8StringEncoding error:NULL];
+    for (NSString *line in [previous componentsSeparatedByString:@"\n"]) {
+        if (line.length > 0) { [sDiagnosticEvents addObject:line]; }
+    }
+    if (sDiagnosticEvents.count > kDiagnosticEventLimit) {
+        [sDiagnosticEvents removeObjectsInRange:NSMakeRange(0, sDiagnosticEvents.count - kDiagnosticEventLimit)];
+    }
+}
+
+// Only internal lifecycle/process labels belong here, never webpage text,
+// request URLs, headers, cookies or credentials. Retain a bounded last session
+// across an OS termination, so a force quit does not erase the evidence.
+static void RecordDiagnostic(NSString *message) {
+    if (![NSThread isMainThread]) {
+        NSString *copy = [message copy];
+        dispatch_async(dispatch_get_main_queue(), ^{ RecordDiagnostic(copy); });
+        return;
+    }
+    LoadDiagnosticEvents();
+    NSString *singleLine = [[message componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]] componentsJoinedByString:@" "];
+    if (singleLine.length > 1024) { singleLine = [singleLine substringToIndex:1024]; }
+    [sDiagnosticEvents addObject:[NSString stringWithFormat:@"%@ uptime=%.0f %@",
+                                 [NSDate date], NSProcessInfo.processInfo.systemUptime, singleLine]];
+    if (sDiagnosticEvents.count > kDiagnosticEventLimit) { [sDiagnosticEvents removeObjectAtIndex:0]; }
+    NSString *report = [[sDiagnosticEvents componentsJoinedByString:@"\n"] stringByAppendingString:@"\n"];
+    [report writeToFile:DiagnosticLogPath() atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+}
 
 static void AcquireBackgroundAssertion(int32_t pid) {
     static dispatch_once_t once;
@@ -43,6 +82,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
         ![assertionClass instancesRespondToSelector:@selector(isValid)] ||
         ![assertionClass instancesRespondToSelector:@selector(invalidate)]) {
         NSLog(@"Reynard: background assertion API unavailable");
+        RecordDiagnostic(@"background assertion API unavailable");
         return;
     }
     if (sBackgroundAssertions[@(pid)]) { return; }
@@ -53,11 +93,38 @@ static void AcquireBackgroundAssertion(int32_t pid) {
         withHandler:^(BOOL acquired) {
             NSLog(@"Reynard: background assertion PID %d %@", pid,
                   acquired ? @"acquired" : @"denied");
+            RecordDiagnostic([NSString stringWithFormat:@"background assertion pid=%d %@", pid,
+                              acquired ? @"acquired" : @"denied"]);
         }];
     if (assertion) { sBackgroundAssertions[@(pid)] = assertion; }
 }
 
 @implementation GeckoRuntimeBridge
+
++ (void)recordDiagnostic:(NSString *)message {
+    RecordDiagnostic(message);
+}
+
++ (NSString *)backgroundDiagnosticSnapshot {
+    NSAssert([NSThread isMainThread], @"Background diagnostics must use the main thread");
+    NSMutableArray<NSString *> *parts = [NSMutableArray array];
+    NSString *owners = [[sBackgroundOwners.allObjects sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@","];
+    [parts addObject:[NSString stringWithFormat:@"owners=%@ hostAssertion=%@",
+                      owners.length ? owners : @"none",
+                      [sBackgroundAssertions[@(getpid())] isValid] ? @"valid" : @"absent-or-invalid"]];
+    for (NSNumber *pid in [sBackgroundProcesses.allObjects sortedArrayUsingSelector:@selector(compare:)]) {
+        [parts addObject:[NSString stringWithFormat:@"child=%@ assertion=%@", pid,
+                          [sBackgroundAssertions[pid] isValid] ? @"valid" : @"absent-or-invalid"]];
+    }
+    return [parts componentsJoinedByString:@"; "];
+}
+
++ (NSString *)diagnosticReport {
+    NSAssert([NSThread isMainThread], @"Diagnostics export must use the main thread");
+    LoadDiagnosticEvents();
+    return [NSString stringWithFormat:@"Current state: %@\n\nRecent lifecycle events:\n%@\n",
+            [self backgroundDiagnosticSnapshot], [sDiagnosticEvents componentsJoinedByString:@"\n"]];
+}
 
 + (NSString *)version {
     return @MOZILLA_VERSION;

@@ -1,3 +1,45 @@
+## Connection comparison and diagnostics candidate (2026-10-14)
+
+User explicitly confirms they installed OUR workflow 38346076209, not official
+0.17.1. That workflow SUCCEEDED and produced artifact 11789595382, archive SHA-256
+2c0f7ea7e8addf634bf8b9e53786505676e969404b2598e2a5e2bafc835c87dd.
+They report continuing timeouts and missing messages on app/background switches.
+The two-hour window did NOT solve the reported problem. Do not ask which build
+again, call it fixed, or simply increase the duration further.
+
+New controlled candidate disables ONLY HTTP/3 by default. HTTPS, HTTP/2 and
+HTTP/1.1 remain; user can compare the prior transport using Settings → Advanced →
+Compatibility → HTTP/3 Connections, then restart Reynard. Switch changes are
+applied at launch so toggling does not interrupt current responses/downloads.
+The explicit app setting clears a user override of only network.http.http3.enable;
+no other network/privacy/account preferences are reset. This affects ALL websites.
+It is a compatibility experiment, NOT a proven diagnosis of the user's issue.
+Mozilla bug 2054388 describes hanging QUIC requests after sleep/network changes on
+macOS, still unconfirmed; it does not establish this iOS cause. Dictionaries and
+Apple fast datapath workarounds are already off by default in the pinned engine.
+
+Added bounded persistent lifecycle/process diagnostics (last 240 events). Record
+host/content/socket assertion results, process starts/exits including unprotected
+GPU exits, scene transitions, memory warnings, generic content crash/kill and
+ChatGPT top-level page-load start/stop. A 30-second timer samples assertion validity
+while the existing page window remains active; it NEVER renews activity. End/expiry
+cancels it. This does not capture individual ChatGPT API requests or prove server
+completion. No chat text, request URLs, headers, cookies or tokens are recorded.
+
+If it fails, user can export at Settings → Advanced → Compatibility → Export
+Connection Diagnostics and attach Reynard-Connection-Diagnostics.txt here. Export
+uses the system share sheet; no automatic upload. Cache log survives app restart
+where OS cache is retained. Reports include app build, engine version and requested
+transport (applied transport is in startup events). Child GPU processes remain
+unprotected; downloads retain their independent ownership and proven behavior.
+
+Candidate still uses EXACT official 0.17.1 engine/patches and verified released
+TIPA. No native engine rebuild. Existing stability/download checks plus connection
+scope and diagnostic grant/bounded-retention checks run in CI; actual device
+connectivity, grants and reported scrolling issue remain unverified/unresolved.
+Artifact: Reynard-0.17.1-ChatGPT-Connection-Test-TrollStore, contains
+Reynard-TrollStore.tipa. User reports workflow finish; do not monitor whole run.
+
 ## Long ChatGPT background responses (2026-10-13)
 
 User confirms the custom 0.17.0-based build's background downloads WORK.

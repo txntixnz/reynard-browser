@@ -20,6 +20,11 @@ with tempfile.TemporaryDirectory(prefix="reynard-resume-") as tmp:
     subprocess.run(["swiftc", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 
+    connection = (ROOT / "browser/Reynard/Client/Preferences/ConnectionCompatibilityController.swift").read_text().replace("import GeckoView\n", "")
+    swift_file.write_text((ROOT / "tests/stability/ConnectionPolicyRegression.swift.template").read_text().replace("// CONNECTION_SOURCE", connection))
+    subprocess.run(["swiftc", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
+
     helper = (ROOT / "browser/Helper/Helper.swift").read_text()
     helper = helper[helper.index("@objc private protocol BootstrapPing"):helper.index("\nopen class BrowserHelper")]
     helper = helper.replace("_exit(EXIT_SUCCESS)", "recordExit(EXIT_SUCCESS)")

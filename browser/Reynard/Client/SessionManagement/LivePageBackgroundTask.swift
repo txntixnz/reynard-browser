@@ -8,6 +8,7 @@ final class LivePageBackgroundTask {
     private var generation: UUID?
     private var taskIdentifier = UIBackgroundTaskIdentifier.invalid
     private var deadline: DispatchWorkItem?
+    private var watchdog: Timer?
     private var onEnd: (() -> Void)?
     static let ordinaryMaximumDuration: TimeInterval = 180
     static let entitledMaximumDuration: TimeInterval = 2 * 60 * 60
@@ -15,6 +16,8 @@ final class LivePageBackgroundTask {
         getEntitlementValue("com.apple.multitasking.unlimitedassertions")
             ? entitledMaximumDuration : ordinaryMaximumDuration
     }
+
+    deinit { stop() }
 
     @discardableResult
     func start(onEnd: @escaping () -> Void) -> Bool {
@@ -24,7 +27,9 @@ final class LivePageBackgroundTask {
         self.onEnd = onEnd
         // The special assertion is restricted to the entitled private build.
         // UIKit supplies the fallback and protects asynchronous acquisition.
-        if getEntitlementValue("com.apple.multitasking.unlimitedassertions") {
+        let entitled = getEntitlementValue("com.apple.multitasking.unlimitedassertions")
+        GeckoRuntime.recordDiagnostic("live-page requested entitled=\(entitled)")
+        if entitled {
             GeckoRuntime.beginBackgroundGrace()
         }
         let identifier = UIApplication.shared.beginBackgroundTask(withName: "Live ChatGPT response") { [weak self] in
@@ -49,6 +54,13 @@ final class LivePageBackgroundTask {
         let duration = Self.maximumDuration
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: deadline)
         NSLog("Reynard: live-page background window requested (maximum %.0f seconds)", duration)
+        GeckoRuntime.recordDiagnostic("live-page start maximum=\(Int(duration))s \(GeckoRuntime.backgroundDiagnosticSnapshot)")
+        let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            guard let self, self.generation == generation else { return }
+            GeckoRuntime.recordDiagnostic("live-page checkpoint \(GeckoRuntime.backgroundDiagnosticSnapshot)")
+        }
+        watchdog = timer
+        RunLoop.main.add(timer, forMode: .common)
         return true
     }
 
@@ -61,7 +73,10 @@ final class LivePageBackgroundTask {
 
     func stop() {
         guard generation != nil else { return }
+        GeckoRuntime.recordDiagnostic("live-page stop \(GeckoRuntime.backgroundDiagnosticSnapshot)")
         generation = nil
+        watchdog?.invalidate()
+        watchdog = nil
         deadline?.cancel()
         deadline = nil
         releaseUIKitTask()

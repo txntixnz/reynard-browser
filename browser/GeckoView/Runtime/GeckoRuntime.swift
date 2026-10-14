@@ -24,19 +24,23 @@ class GeckoRuntimeImpl: NSObject, SwiftGeckoViewRuntime {
     private var backgroundProcessMonitors: [Int32: (UUID, DispatchSourceProcess)] = [:]
 
     private func trackBackgroundProcess(pid: Int32, processType: String) {
-        // GPU processes stay governed by their foreground rendering lifecycle.
-        guard pid > 1, processType == "tab" || processType == "socket" else { return }
+        guard pid > 1 else { return }
         guard backgroundProcessMonitors[pid] == nil else { return }
+        // Monitor every child exit, but only protect content and sockets.
+        // GPU processes retain their normal foreground rendering lifecycle.
+        let protected = processType == "tab" || processType == "socket"
+        GeckoRuntimeBridge.recordDiagnostic("child started type=\(processType) pid=\(pid)")
         let generation = UUID()
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
         backgroundProcessMonitors[pid] = (generation, source)
         source.setEventHandler { [weak self] in
             guard let self, backgroundProcessMonitors[pid]?.0 == generation else { return }
-            GeckoRuntimeBridge.removeBackgroundProcess(pid)
+            GeckoRuntimeBridge.recordDiagnostic("child exited type=\(processType) pid=\(pid)")
+            if protected { GeckoRuntimeBridge.removeBackgroundProcess(pid) }
             backgroundProcessMonitors.removeValue(forKey: pid)?.1.cancel()
         }
         source.resume()
-        GeckoRuntimeBridge.registerBackgroundProcess(pid)
+        if protected { GeckoRuntimeBridge.registerBackgroundProcess(pid) }
     }
     func runtimeDispatcher() -> any SwiftEventDispatcher {
         return GeckoEventDispatcherWrapper.runtimeInstance
@@ -102,6 +106,9 @@ public class GeckoRuntime {
     public static func beginBackgroundDownloadGrace() { GeckoRuntimeBridge.beginBackgroundDownloadGrace() }
     public static var hasBackgroundDownloadGrace: Bool { GeckoRuntimeBridge.hasBackgroundDownloadGrace() }
     public static func endBackgroundDownloadGrace() { GeckoRuntimeBridge.endBackgroundDownloadGrace() }
+    public static func recordDiagnostic(_ message: String) { GeckoRuntimeBridge.recordDiagnostic(message) }
+    public static var backgroundDiagnosticSnapshot: String { GeckoRuntimeBridge.backgroundDiagnosticSnapshot() }
+    public static var diagnosticReport: String { GeckoRuntimeBridge.diagnosticReport() }
     
     public static func setLocale(acceptLanguages: String) {
         GeckoEventDispatcherWrapper.runtimeInstance.dispatch(

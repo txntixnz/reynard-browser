@@ -1739,6 +1739,9 @@ extension TabManagerImplementation: ProgressDelegate {
     }
     
     func onPageStart(session: GeckoSession, url: String) {
+        if let host = URL(string: url)?.host?.lowercased(), host == "chatgpt.com" || host == "chat.openai.com" {
+            GeckoRuntime.recordDiagnostic("ChatGPT navigation start")
+        }
         guard let location = tabLocation(for: session) else {
             return
         }
@@ -1773,6 +1776,9 @@ extension TabManagerImplementation: ProgressDelegate {
             return
         }
         let tab = tabs(for: location.mode)[location.index]
+        if let host = URL(string: tab.url ?? "")?.host?.lowercased(), host == "chatgpt.com" || host == "chat.openai.com" {
+            GeckoRuntime.recordDiagnostic("ChatGPT navigation stop success=\(success)")
+        }
         
         if tab.state.isSuppressingInitialBlankPageLoad {
             tab.state.isSuppressingInitialBlankPageLoad = false

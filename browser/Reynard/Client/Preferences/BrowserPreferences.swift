@@ -55,6 +55,8 @@ final class BrowserPreferences {
             // Compatibility
             key("CompatibilitySettings", "androidUserAgentDomains"): [],
             key("CompatibilitySettings", "useAndroidUserAgent"): true,
+            // Controlled connection test for persistent ChatGPT stalls.
+            key("CompatibilitySettings", "useHTTP3"): false,
             key("CompatibilitySettings", "customUserAgent"): "",
             key("CompatibilitySettings", "customPlatform"): "",
             key("CompatibilitySettings", "customAppVersion"): "",
@@ -887,6 +889,11 @@ final class BrowserPreferences {
     
     // MARK: - Compatibility
     struct CompatibilitySettings {
+        static var useHTTP3: Bool {
+            get { prefs.bool(forSetting: "CompatibilitySettings", key: "useHTTP3") }
+            set { prefs.set(newValue, forSetting: "CompatibilitySettings", key: "useHTTP3") }
+        }
+
         static var androidUserAgentDomains: [String] {
             get {
                 guard let data = prefs.data(forSetting: "CompatibilitySettings", key: "androidUserAgentDomains"),

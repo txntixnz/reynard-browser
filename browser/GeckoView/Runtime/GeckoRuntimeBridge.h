@@ -21,6 +21,9 @@
 + (void)beginBackgroundDownloadGrace;
 + (BOOL)hasBackgroundDownloadGrace;
 + (void)endBackgroundDownloadGrace;
++ (void)recordDiagnostic:(NSString *)message;
++ (NSString *)backgroundDiagnosticSnapshot;
++ (NSString *)diagnosticReport;
 
 @end
 

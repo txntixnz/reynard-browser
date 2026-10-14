@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import GeckoView
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -36,6 +37,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
         }
         
+        GeckoRuntime.recordDiagnostic("scene became active \(GeckoRuntime.backgroundDiagnosticSnapshot)")
         browserViewController.startScreenOrientationHandling()
         browserViewController.sessionManager.applicationDidBecomeActive()
         browserViewController.tabManager.applicationDidBecomeActive()
@@ -46,6 +48,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
         }
         
+        GeckoRuntime.recordDiagnostic("scene resigning active")
         browserViewController.stopScreenOrientationHandling()
         browserViewController.tabManager.applicationWillResignActive()
         browserViewController.sessionManager.applicationWillResignActive()
@@ -67,6 +70,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     
     func sceneDidEnterBackground(_ scene: UIScene) {
+        GeckoRuntime.recordDiagnostic("scene entered background \(GeckoRuntime.backgroundDiagnosticSnapshot)")
         (window?.rootViewController as? BrowserViewController)?
             .sessionManager.setApplicationForeground(false)
     }

@@ -34,6 +34,8 @@ int main() {
         [GeckoRuntimeBridge registerBackgroundProcess:42001];
         [GeckoRuntimeBridge beginBackgroundGrace];
         NSCAssert(created.count == 2 && [GeckoRuntimeBridge hasBackgroundGrace], @"Host and registered child must acquire activity");
+        NSString *snapshot = [GeckoRuntimeBridge backgroundDiagnosticSnapshot];
+        NSCAssert([snapshot containsString:@"hostAssertion=valid"] && [snapshot containsString:@"child=42001 assertion=valid"], @"Diagnostic snapshot must distinguish host and child grants");
         [GeckoRuntimeBridge beginBackgroundGrace];
         NSCAssert(created.count == 2, @"Duplicate request must not acquire duplicate assertions");
         [GeckoRuntimeBridge registerBackgroundProcess:42002];
@@ -57,7 +59,11 @@ int main() {
         permitted = NO;
         [GeckoRuntimeBridge beginBackgroundGrace];
         NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Denied API result must not report protection");
+        NSCAssert([[GeckoRuntimeBridge backgroundDiagnosticSnapshot] containsString:@"hostAssertion=absent-or-invalid"], @"Diagnostic snapshot must report denied host grant");
         [GeckoRuntimeBridge endBackgroundGrace];
+        for (NSUInteger i = 0; i < 245; ++i) { [GeckoRuntimeBridge recordDiagnostic:[NSString stringWithFormat:@"bounded-test-%lu", (unsigned long)i]]; }
+        NSString *report = [GeckoRuntimeBridge diagnosticReport];
+        NSCAssert(![report containsString:@"bounded-test-0\n"] && [report containsString:@"bounded-test-244"], @"Export must retain bounded recent events");
         NSLog(@"PASS: native assertion acquisition, child exit, denial and complete cleanup");
     }
     return 0;

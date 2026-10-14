@@ -18,6 +18,8 @@ final class UIApplication {
     func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) { ended.append(identifier) }
 }
 enum GeckoRuntime {
+    static func recordDiagnostic(_ message: String) {}
+    static var backgroundDiagnosticSnapshot: String { "test snapshot" }
     static var hasBackgroundGrace = false
     static var privateAllowed = false
     static var begins = 0
@@ -33,18 +35,21 @@ func check(_ value: @autoclosure () -> Bool, _ message: String) {
 // BACKGROUND_SOURCE
 extension LivePageBackgroundTask {
     var testDeadline: DispatchWorkItem? { deadline }
+    var testWatchdogIsValid: Bool { watchdog?.isValid == true }
 }
 
 let app = UIApplication.shared
 let task = LivePageBackgroundTask()
 var completions = 0
 check(task.start { completions += 1 }, "UIKit-only background window starts")
+check(task.testWatchdogIsValid, "background diagnostics sample without renewing activity")
 let oldExpiration = app.handlers.last!
 let oldDeadline = task.testDeadline!
 check(task.start { preconditionFailure("duplicate callback") }, "repeated start retains the existing window")
 check(app.handlers.count == 1 && LivePageBackgroundTask.maximumDuration == 180, "ordinary installs retain a finite three-minute maximum without renewal")
 oldExpiration()
 check(completions == 1 && app.ended.count == 1, "UIKit expiry releases activity exactly once without private assertion")
+check(!task.testWatchdogIsValid, "background expiry stops the diagnostics timer")
 task.stop()
 check(completions == 1 && app.ended.count == 1, "repeated cleanup is harmless")
 entitled = true
@@ -67,4 +72,11 @@ app.synchronousExpiry = true
 let endedBefore = app.ended.count
 check(!task.start { completions += 1 }, "synchronous expiry cannot leave an active window")
 check(completions == 4 && app.ended.count == endedBefore + 1, "synchronously returned UIKit task is released")
+app.synchronousExpiry = false
+GeckoRuntime.privateAllowed = true
+var disposedTask: LivePageBackgroundTask? = LivePageBackgroundTask()
+check(disposedTask!.start { completions += 1 }, "background window starts before its owner is disposed")
+let endedBeforeDisposal = app.ended.count
+disposedTask = nil
+check(completions == 5 && app.ended.count == endedBeforeDisposal + 1 && !GeckoRuntime.hasBackgroundGrace, "disposing the page owner releases the timer and private/UIKit activity")
 print("Background lifecycle checks passed; device assertion grants remain untested.")

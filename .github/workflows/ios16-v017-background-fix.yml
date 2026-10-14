@@ -1,4 +1,4 @@
-name: iOS 16 - 0.17.1 Long ChatGPT Responses and Downloads
+name: iOS 16 - 0.17.1 ChatGPT Connection Test
 
 on:
   push:
@@ -57,6 +57,6 @@ jobs:
         run: ./tools/release/create-ipa.sh --trollstore
       - uses: actions/upload-artifact@v4
         with:
-          name: Reynard-0.17.1-Long-ChatGPT-Responses-TrollStore
+          name: Reynard-0.17.1-ChatGPT-Connection-Test-TrollStore
           path: dist/Reynard-TrollStore.tipa
           if-no-files-found: error
