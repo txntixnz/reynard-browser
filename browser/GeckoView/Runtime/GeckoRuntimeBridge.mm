@@ -9,6 +9,7 @@
 
 #import "mozilla-config.h"
 #import <dlfcn.h>
+#import <objc/runtime.h>
 #import <unistd.h>
 
 // Runtime-load private APIs only for entitled installs. RunningBoard signatures
@@ -50,6 +51,11 @@ static NSMutableSet<NSString *> *sBackgroundOwners;
 static NSMutableDictionary<NSNumber *, NSUUID *> *sPendingAssertions;
 static NSMutableArray<NSString *> *sDiagnosticEvents;
 static const NSUInteger kDiagnosticEventLimit = 240;
+
+static NSString *sHeadlessHelperIdentifier;
+static NSHashTable *sHeadlessHelperExtensions;
+static BOOL sHeadlessLifecycleHookInstalled;
+static id (*sOriginalExtensionFactory)(id, SEL, NSString *, NSError **);
 
 static dispatch_queue_t AssertionQueue() {
     static dispatch_queue_t queue;
@@ -93,6 +99,64 @@ static void RecordDiagnostic(NSString *message) {
     if (sDiagnosticEvents.count > kDiagnosticEventLimit) { [sDiagnosticEvents removeObjectAtIndex:0]; }
     NSString *report = [[sDiagnosticEvents componentsJoinedByString:@"\n"] stringByAppendingString:@"\n"];
     [report writeToFile:DiagnosticLogPath() atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+}
+
+// These Gecko processes use the AR-viewer extension point as a bootstrap;
+// they do not contain an extension UI. NSExtension's host background callbacks
+// synchronously contact that UI and can wait on an already-suspended helper.
+// LiveContainer removes the same two observers for its background processes:
+// 4dbe0f9/MultitaskSupport/AppSceneViewController.m, setWillResignActiveNotificationEnabled:.
+// Remove only those observers from exact helper objects returned by the
+// factory. Preserve unrelated extensions and all other lifecycle notifications.
+static void RemoveHeadlessHostBackgroundObservers(id extension) {
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center removeObserver:extension name:@"UIApplicationWillResignActiveNotification" object:nil];
+    [center removeObserver:extension name:@"UIApplicationDidEnterBackgroundNotification" object:nil];
+}
+
+static id CreateHeadlessAwareExtension(id receiver, SEL selector, NSString *identifier, NSError **error) {
+    id extension = sOriginalExtensionFactory(receiver, selector, identifier, error);
+    if (extension && [identifier isEqualToString:sHeadlessHelperIdentifier]) {
+        @synchronized (sHeadlessHelperExtensions) {
+            [sHeadlessHelperExtensions addObject:extension];
+        }
+        RemoveHeadlessHostBackgroundObservers(extension);
+        RecordDiagnostic(@"headless helper created; host background observers removed");
+    }
+    return extension;
+}
+
+static void InstallHeadlessLifecycleHook() {
+    if (!sHeadlessHelperIdentifier || sHeadlessLifecycleHookInstalled) { return; }
+    Class extensionClass = NSClassFromString(@"NSExtension");
+    SEL selector = NSSelectorFromString(@"extensionWithIdentifier:error:");
+    Method method = extensionClass ? class_getClassMethod(extensionClass, selector) : NULL;
+    if (!method || method_getNumberOfArguments(method) != 4) { return; }
+    char returnType[8] = {}, identifierType[8] = {}, errorType[8] = {};
+    method_getReturnType(method, returnType, sizeof(returnType));
+    method_getArgumentType(method, 2, identifierType, sizeof(identifierType));
+    method_getArgumentType(method, 3, errorType, sizeof(errorType));
+    if (returnType[0] != '@' || identifierType[0] != '@' || errorType[0] != '^' || errorType[1] != '@') { return; }
+    sOriginalExtensionFactory = (id (*)(id, SEL, NSString *, NSError **))method_getImplementation(method);
+    Class metaClass = object_getClass(extensionClass);
+    // Add an override if the factory is inherited rather than changing its
+    // superclass. Repeated setup never wraps the replacement recursively.
+    if (!class_addMethod(metaClass, selector, (IMP)CreateHeadlessAwareExtension, method_getTypeEncoding(method))) {
+        method_setImplementation(method, (IMP)CreateHeadlessAwareExtension);
+    }
+    sHeadlessLifecycleHookInstalled = YES;
+    RecordDiagnostic(@"headless helper lifecycle hook installed");
+}
+
+static void PrepareHeadlessHelperLifecycle() {
+    InstallHeadlessLifecycleHook();
+    NSArray *extensions;
+    @synchronized (sHeadlessHelperExtensions) {
+        extensions = sHeadlessHelperExtensions.allObjects;
+    }
+    // Request startup may register observers again after the factory returns.
+    // Repeat removal when the child is ready and before the background window.
+    for (id extension in extensions) { RemoveHeadlessHostBackgroundObservers(extension); }
 }
 
 static void AcquireBackgroundAssertion(int32_t pid) {
@@ -182,6 +246,19 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 
 @implementation GeckoRuntimeBridge
 
++ (void)configureHeadlessExtensionLifecycle:(NSString *)helperIdentifier {
+    NSAssert([NSThread isMainThread], @"Headless lifecycle setup must use the main thread");
+    if (helperIdentifier.length == 0) { return; }
+    // Configured once by the entitled host before it launches Gecko helpers.
+    if (sHeadlessHelperIdentifier) {
+        if ([sHeadlessHelperIdentifier isEqualToString:helperIdentifier]) { InstallHeadlessLifecycleHook(); }
+        return;
+    }
+    sHeadlessHelperIdentifier = [helperIdentifier copy];
+    if (!sHeadlessHelperExtensions) { sHeadlessHelperExtensions = [NSHashTable weakObjectsHashTable]; }
+    InstallHeadlessLifecycleHook();
+}
+
 + (void)recordDiagnostic:(NSString *)message {
     RecordDiagnostic(message);
 }
@@ -193,6 +270,8 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     [parts addObject:[NSString stringWithFormat:@"owners=%@ hostAssertion=%@",
                       owners.length ? owners : @"none",
                       [sBackgroundAssertions[@(getpid())] isValid] ? @"valid" : sPendingAssertions[@(getpid())] ? @"pending" : @"absent-or-invalid"]];
+    [parts addObject:[NSString stringWithFormat:@"headlessLifecycle=%@",
+                      sHeadlessLifecycleHookInstalled ? @"installed" : sHeadlessHelperIdentifier ? @"unavailable" : @"off"]];
     for (NSNumber *pid in [sBackgroundProcesses.allObjects sortedArrayUsingSelector:@selector(compare:)]) {
         [parts addObject:[NSString stringWithFormat:@"child=%@ assertion=%@", pid,
                           [sBackgroundAssertions[pid] isValid] ? @"valid" : sPendingAssertions[pid] ? @"pending" : @"absent-or-invalid"]];
@@ -214,6 +293,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 + (void)registerBackgroundProcess:(int32_t)pid {
     NSAssert([NSThread isMainThread], @"Background process registry must use the main thread");
     if (pid <= 1) { return; }
+    PrepareHeadlessHelperLifecycle();
     if (!sBackgroundProcesses) { sBackgroundProcesses = [NSMutableSet set]; }
     [sBackgroundProcesses addObject:@(pid)];
     if (sBackgroundOwners.count > 0) { AcquireBackgroundAssertion(pid); }
@@ -237,6 +317,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 
 + (void)beginBackgroundActivityForOwner:(NSString *)owner {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
+    PrepareHeadlessHelperLifecycle();
     if (!sBackgroundOwners) { sBackgroundOwners = [NSMutableSet set]; }
     [sBackgroundOwners addObject:owner];
     if (!sBackgroundAssertions) { sBackgroundAssertions = [NSMutableDictionary dictionary]; }

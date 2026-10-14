@@ -100,6 +100,10 @@ public class GeckoRuntime {
         return GeckoRuntimeBridge.version()
     }
 
+    public static func configureHeadlessExtensionLifecycle(helperIdentifier: String) {
+        GeckoRuntimeBridge.configureHeadlessExtensionLifecycle(helperIdentifier)
+    }
+
     public static func beginBackgroundGrace() { GeckoRuntimeBridge.beginBackgroundGrace() }
     public static var hasBackgroundGrace: Bool { GeckoRuntimeBridge.hasBackgroundGrace() }
     public static func endBackgroundGrace() { GeckoRuntimeBridge.endBackgroundGrace() }

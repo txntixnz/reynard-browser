@@ -1,3 +1,58 @@
+## Watchdog kills host while socket helper is suspended (2026-10-14)
+
+User explicitly confirms Reynard restarts on every app switch WITHOUT a force quit.
+Do not ask that question again or treat valid grants as proof of background liveness.
+Installed d0273d2; workflow 38595997477 SUCCEEDED, including actual signed host/helper
+permission inspection. Device diagnostics (2) and (3) confirm all relevant grants
+acquired=1 valid=1. The entitlement correction is accepted but did NOT fix restarts.
+
+Read all of these directly from scratch uploads, NOT Library tools:
+- Reynard-2026-10-14-182720.ips (host 25681)
+- Reynard-2026-10-14-184048(1).ips (host 25815)
+- Reynard-2026-10-14-184125(1).ips (host 25849)
+- Reynard-Connection-Diagnostics(3).txt
+
+All three .ips files are bug_type 509 STACKSHOTS, not normal threads/usedImages
+crash JSON. Termination code 2343432205 == 0x8badf00d; scene-update watchdog,
+10-second wall-clock allowance, negligible app CPU. MainThread is on
+com.apple.extension.global-state-queue in a synchronous mach_msg receive.
+turnstileInfo links it to a thread in the matching SOCKET helper in every case:
+25682 / 25816 / 25850. All three targets have flags=suspended, suspendCount=1.
+These are not inferred memory-limit failures or merely a ChatGPT network error.
+Diagnostics (3) even has a valid 30-second checkpoint at 16:40:38 UTC, followed
+by the watchdog at 16:40:48. The failure also occurs with low power mode OFF.
+
+The unchanged official XUL UUID 4c4c4454-5555-3144-a121-4f6e409c5895 matches
+binaryImages entries in the crash. Its on-disk symbol table resolves offsets
+91756664 and 91756916 to nsAppShell::ProcessNextNativeEvent and nsAppShell::Run.
+System-cache frames are unsymbolicated; do not invent exact system function names.
+
+Relevant primary precedent inspected:
+https://github.com/LiveContainer/LiveContainer/blob/4dbe0f9a626de801184a42c0be8d2cb105058e3d/MultitaskSupport/AppSceneViewController.m
+Its setWillResignActiveNotificationEnabled: removes the NSExtension object's
+UIApplicationDidEnterBackground and UIApplicationWillResignActive observers to
+allow an extension process to continue running. Reynard's helpers use the same
+AR-viewer bootstrap point (com.apple.ar.viewer) but have no extension UI.
+
+New candidate intercepts the known extensionWithIdentifier:error: factory only
+in the entitled host, before Gecko starts. Tracks exact helper objects weakly,
+removes ONLY those two background observers from them, and repeats removal after
+child readiness and before acquiring page/download activity. Does not alter
+other extension objects, foreground notifications, Gecko state transitions or
+private grant cleanup. Guards API availability/signature and repeated setup.
+Native tests exercise ordinary behavior, missing API/retry, exact helper filtering,
+foreground callbacks, late observer registration, repeated setup, original errors
+and weak ownership. This is a device candidate; mock tests cannot prove iOS liveness.
+
+Startup now logs host PID/build in main.swift. The Swift AppDelegate is NOT the
+UIApplication delegate: official XUL calls UIApplicationMain with AppShellDelegate.
+Memory-warning notification logging also moves to the active startup path.
+
+Workflow/artifact: iOS 16 - 0.17.1 Extension Watchdog Fix /
+Reynard-0.17.1-Extension-Watchdog-Fix-TrollStore, contains Reynard-TrollStore.tipa.
+Keep the verified official 0.17.1 engine/patches byte-for-byte. User reports build
+finish; do not monitor a whole workflow or start a four-hour engine rebuild.
+
 ## RunningBoard host succeeds; helper permission omitted (2026-10-14)
 
 User installed ed1e557 from workflow 38592106088 (SUCCEEDED) and attached
