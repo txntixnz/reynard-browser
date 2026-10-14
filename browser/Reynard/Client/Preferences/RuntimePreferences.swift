@@ -10,6 +10,7 @@ import GeckoView
 
 enum RuntimePreferences {
     static func apply() {
+        ConnectionCompatibilityController.apply()
         // On sites with heavy graphics, the GPU process would crash
         // multiple times during user interactions on the iPad Air 2.
         // I originally thought this is due to OOM, but it turns out

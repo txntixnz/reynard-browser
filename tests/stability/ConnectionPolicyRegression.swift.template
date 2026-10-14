@@ -1,0 +1,28 @@
+import Foundation
+
+enum Prefs {
+    enum CompatibilitySettings { static var useHTTP3 = false }
+}
+enum GeckoRuntime {
+    static var events: [(String, [String: Any?])] = []
+    static var prefs: [String: Any] = [:]
+    static func dispatchEvent(type: String, message: [String: Any?]? = nil) {
+        events.append((type, message ?? [:]))
+    }
+    static func setDefaultPrefs(_ values: [String: Any]) { prefs = values }
+    static func recordDiagnostic(_ message: String) {}
+}
+
+// CONNECTION_SOURCE
+
+for enabled in [false, true] {
+    Prefs.CompatibilitySettings.useHTTP3 = enabled
+    ConnectionCompatibilityController.apply()
+    precondition(GeckoRuntime.prefs.count == 1)
+    precondition(GeckoRuntime.prefs["network.http.http3.enable"] as? Bool == enabled)
+    let event = GeckoRuntime.events.last!
+    precondition(event.0 == "GeckoView:ResetUserPrefs")
+    precondition(event.1.count == 1)
+    precondition(event.1["names"] as? [String] == ["network.http.http3.enable"])
+}
+print("PASS: connection comparison controls only HTTP/3, without resetting other preferences")

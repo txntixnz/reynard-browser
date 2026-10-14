@@ -461,6 +461,13 @@ public class GeckoSession {
             flushSessionState()
         }
     }
+
+    public func requestRepaint() {
+        guard let engineView, engineView.window != nil else { return }
+        // Invalidate the existing native surface without reloading the document
+        // or replacing its current response, form data, or scroll position.
+        engineView.setNeedsDisplay(engineView.bounds)
+    }
     
     public func setFocused(_ focused: Bool) {
         dispatcher.dispatch(type: "GeckoView:SetFocused", message: ["focused": focused])
@@ -514,6 +521,10 @@ public class GeckoSession {
     }
     
     // Keyboard
+    public func dismissSoftwareKeyboard() {
+        window?.dismissSoftwareKeyboard()
+    }
+
     public func focusedInputMetrics() async -> (bottomRatio: CGFloat, caretTop: CGFloat?)? {
         let response = try? await dispatcher.query(type: "GeckoView:GetFocusedInputMetrics")
         guard let values = response as? [AnyHashable: Any],
@@ -552,7 +563,19 @@ public class GeckoSession {
         window?.setDynamicToolbarMaxHeight(maxHeight, minHeight: min(max(0, minHeight), maxHeight))
     }
     
-    public func setContentOffsets(top: CGFloat, bottom: CGFloat, topInset: CGFloat, bottomInset: CGFloat) {
-        window?.setContentOffsets(top, bottom: bottom, topInset: topInset, bottomInset: bottomInset)
+    public func setContentOffsets(
+        top: CGFloat,
+        bottom: CGFloat,
+        topInset: CGFloat,
+        bottomInset: CGFloat,
+        contentTranslationY: CGFloat
+    ) {
+        window?.setContentOffsets(
+            top,
+            bottom: bottom,
+            topInset: topInset,
+            bottomInset: bottomInset,
+            contentTranslationY: contentTranslationY
+        )
     }
 }

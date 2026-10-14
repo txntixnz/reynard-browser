@@ -1,0 +1,70 @@
+name: iOS 16 Autocorrect and Resume Test
+
+on:
+  push:
+    branches: [ios16-autocorrect-fix]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ios16-autocorrect-fix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Browser, resume and autocorrect regression checks
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.6'
+      - name: Run regression checks
+        run: |
+          python3 tests/stability/run.py
+          python3 tests/stability/run-autocorrect.py
+          python3 tests/stability/run-downloads.py
+
+  app_compile:
+    needs: regression
+    name: Compile complete iOS app before building Gecko
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.6'
+      - name: Install compile dependencies
+        run: brew install python@3.12
+      - name: Prepare engine for app compilation only
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: '"$(brew --prefix python@3.12)/bin/python3.12" tools/release/prepare-prebuilt-gecko.py --keyboard-engine --compile-check-only'
+      - name: Initialize idevice support
+        run: git submodule update --init --recursive support/idevice
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - name: Build idevice support library
+        run: ./tools/development/build-idevice.sh
+      - name: Compile browser, GeckoView and helpers for iOS
+        run: ./tools/release/build-app.sh --no-signing
+      # No package or artifact is produced with this older engine. The final
+      # build below compiles the changed native editor and packages that engine.
+
+  build:
+    needs: app_compile
+    uses: ./.github/workflows/build.yml
+    with:
+      checkout_ref: ${{ github.sha }}
+      nightly: false
+      build_normal_ipa: false
+      build_trollstore_tipa: true
+      build_jailbroken_ipa: false
+      preserve_engine: true

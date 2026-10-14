@@ -1,0 +1,110 @@
+import Foundation
+
+@MainActor final class WindowScene {
+    enum Activation { case foregroundActive, background }
+    var activationState = Activation.foregroundActive
+}
+@MainActor final class Window {
+    var isKeyWindow = true
+    var windowScene: WindowScene? = WindowScene()
+}
+@MainActor final class EngineView {
+    var isFirstResponder = true
+    var window: Window? = Window()
+}
+@MainActor final class GeckoSession {
+    var engineView: EngineView? = EngineView()
+    var hardwareFocusCalls = 0
+    var softwareDismissCalls = 0
+    func dismissSoftwareKeyboard() { softwareDismissCalls += 1 }
+    func focusForHardwareKeyboard() { hardwareFocusCalls += 1 }
+}
+@MainActor final class Tab { var session = GeckoSession() }
+@MainActor final class TabManager { var selectedTab: Tab? = Tab() }
+@MainActor final class BrowserChrome { var isAddressBarEditing = false }
+@MainActor final class ContentView {
+    var displaying = true
+    func isDisplaying(session: GeckoSession) -> Bool { displaying }
+}
+@MainActor final class BrowserViewController {
+    let browserChrome = BrowserChrome()
+    let tabManager = TabManager()
+    let contentView = ContentView()
+    // RESTORE_FOCUS_METHOD
+    // DISMISS_KEYBOARD_METHOD
+    func restore(_ session: GeckoSession? = nil) { restoreContentKeyboardFocus(for: session) }
+    func dismissKeyboard() { dismissContentKeyboard() }
+}
+@MainActor final class UIViewController {
+    var dismissals = 0
+    var pending: (@MainActor () -> Void)?
+    func dismiss(animated: Bool, completion: @escaping @MainActor () -> Void) {
+        dismissals += 1
+        pending = completion
+    }
+}
+@MainActor final class FilePicker {
+    var launchedFollowupPicker = false
+    var continuation: Int? = 1
+    var presentedController: UIViewController?
+    var menuDismissals = 0
+    func handleMenuDismissed() { menuDismissals += 1 }
+    // FOLLOWUP_METHOD
+    // SHEET_DISMISSED_METHOD
+}
+@MainActor func check(_ value: @autoclosure () -> Bool, _ message: String) {
+    precondition(value(), message)
+    print("PASS: \(message)")
+}
+@main struct Regression {
+    @MainActor static func main() async {
+        let browser = BrowserViewController()
+        let session = browser.tabManager.selectedTab!.session
+        browser.restore(session)
+        check(session.hardwareFocusCalls == 0, "restoration preserves an existing editor keyboard")
+        session.engineView!.isFirstResponder = false
+        browser.restore(session)
+        check(session.hardwareFocusCalls == 1, "missing responder ownership can still be restored")
+        browser.restore(GeckoSession())
+        check(session.hardwareFocusCalls == 1, "stale sessions cannot reclaim keyboard focus")
+        browser.browserChrome.isAddressBarEditing = true
+        browser.restore(session)
+        check(session.hardwareFocusCalls == 1, "address bar editing keeps its keyboard focus")
+        browser.browserChrome.isAddressBarEditing = false
+        session.engineView!.window!.windowScene!.activationState = .background
+        browser.restore(session)
+        check(session.hardwareFocusCalls == 1, "background windows cannot reclaim keyboard focus")
+        session.engineView!.window!.windowScene!.activationState = .foregroundActive
+        browser.contentView.displaying = false
+        browser.restore(session)
+        check(session.hardwareFocusCalls == 1, "hidden content cannot reclaim keyboard focus")
+        browser.dismissKeyboard()
+        check(session.hardwareFocusCalls == 1 && session.softwareDismissCalls == 0, "dismissal cannot affect hidden content")
+        browser.contentView.displaying = true
+        browser.dismissKeyboard()
+        check(session.hardwareFocusCalls == 1 && session.softwareDismissCalls == 1, "Done uses the release native keyboard dismissal")
+
+        let picker = FilePicker()
+        let sheet = UIViewController()
+        let photos = UIViewController()
+        picker.presentedController = sheet
+        var launched = 0
+        picker.launchFollowupPicker { launched += 1; picker.presentedController = photos }
+        check(sheet.dismissals == 1 && launched == 0, "Photos/Files waits for menu dismissal")
+        sheet.pending!()
+        check(launched == 1 && picker.presentedController === photos, "followup picker launches after dismissal completion")
+        picker.handleActionSheetDismissed(sheet)
+        check(picker.presentedController === photos, "late action-sheet callback cannot clear the new picker")
+        check(picker.menuDismissals == 1, "menu dismissal still completes its lifecycle")
+
+        let canceled = FilePicker()
+        let canceledSheet = UIViewController()
+        canceled.presentedController = canceledSheet
+        var canceledLaunches = 0
+        canceled.launchFollowupPicker { canceledLaunches += 1 }
+        canceled.continuation = nil
+        canceledSheet.pending!()
+        check(canceledLaunches == 0, "canceling during dismissal prevents a late picker launch")
+        print("All keyboard and picker regression checks passed.")
+    }
+}

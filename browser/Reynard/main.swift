@@ -76,6 +76,14 @@ private func configureSandboxExtension() {
 LocalizationBundle.activate()
 JITController.shared.start()
 
+// Gecko's AppShellDelegate owns UIApplicationMain. Record startup here so a
+// watchdog relaunch can be distinguished from an ordinary foreground return.
+let diagnosticBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+GeckoRuntime.recordDiagnostic("host startup pid=\(ProcessInfo.processInfo.processIdentifier) build=\(diagnosticBuild)")
+_ = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
+    GeckoRuntime.recordDiagnostic("UIKit memory warning")
+}
+
 if #unavailable(iOS 14.0),
    getEntitlementValue("com.apple.private.security.no-sandbox") {
     configureUnsandboxedAppDataDirectories()

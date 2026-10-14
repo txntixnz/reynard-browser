@@ -201,10 +201,12 @@ func newContentHandler(_ session: GeckoSession) -> GeckoSessionHandler {
         let delegate = delegate as? ContentDelegate
         switch event {
         case .contentCrash:
+            GeckoRuntime.recordDiagnostic("content crash reported")
             delegate?.onCrash(session: session)
             return nil
             
         case .contentKill:
+            GeckoRuntime.recordDiagnostic("content kill reported")
             delegate?.onKill(session: session)
             return nil
             

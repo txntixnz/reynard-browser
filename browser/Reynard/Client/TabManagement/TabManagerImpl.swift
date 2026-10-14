@@ -40,7 +40,13 @@ final class TabManagerImplementation: NSObject, TabManager {
         return self.tabs(for: location.mode)[location.index].title
     }
     private lazy var selectionActionCoordinator = SelectionActionCoordinator(
-        presenter: SelectionActionPresenter(onMenuDismissed: requestContentKeyboardFocus)
+        presenter: SelectionActionPresenter(
+            onMenuDismissed: requestContentKeyboardFocus,
+            onFindInPage: { [weak self] session, query in
+                guard let self else { return }
+                self.delegate?.tabManager(self, didRequestFindInPage: query, in: session)
+            }
+        )
     )
     private lazy var permissionCoordinator = PermissionCoordinator(
         promptPresenter: PermissionPromptPresenter(),
@@ -85,14 +91,25 @@ final class TabManagerImplementation: NSObject, TabManager {
     
     func applicationWillResignActive() {
         sessionEligibleForSilentRecovery = selectedTab?.session
+        guard let tab = selectedTab,
+              let host = URL(string: tab.url ?? "")?.host?.lowercased(),
+              host == "chatgpt.com" || host == "chat.openai.com" else { return }
+        sessionManager.beginBackgroundPageActivity(for: tab.session)
     }
     
     func applicationDidBecomeActive() {
-        guard selectedTab?.session.isOpen() == false else {
+        guard let tab = selectedTab else {
             return
         }
-        
-        selectTab(at: selectedTabIndex, mode: selectedTabMode)
+
+        if tab.session.isOpen() {
+            // Reassert activity after UIKit resumes the app. An open native
+            // window alone does not guarantee the content is active again.
+            sessionManager.activate(tab.session)
+            tab.session.requestRepaint()
+        } else {
+            selectTab(at: selectedTabIndex, mode: selectedTabMode)
+        }
     }
     
     // MARK: - Persistence And Lookup
@@ -380,7 +397,10 @@ final class TabManagerImplementation: NSObject, TabManager {
         if !tab.isPrivate,
            let serializedSessionState,
            let decodedSessionState = GeckoSessionState(serializedString: serializedSessionState),
-           let sessionState = restorableSessionState(decodedSessionState) {
+           let sessionState = restorableSessionState(
+               decodedSessionState,
+               matching: restoredURL(from: fallbackURL)
+           ) {
             tab.state.tabSessionState = sessionState
             tab.state.restoreState = .pendingSession
             return
@@ -389,7 +409,10 @@ final class TabManagerImplementation: NSObject, TabManager {
     }
     
     private func prepareRestoration(for tab: Tab) {
-        if let sessionState = restorableSessionState(tab.state.tabSessionState) {
+        if let sessionState = restorableSessionState(
+            tab.state.tabSessionState,
+            matching: restoredURL(from: tab.url)
+        ) {
             tab.state.tabSessionState = sessionState
             tab.state.restoreState = .pendingSession
         } else {
@@ -568,6 +591,12 @@ final class TabManagerImplementation: NSObject, TabManager {
         restoreTabIfNeeded(tab)
         
         sessionManager.open(replacementSession)
+        // Recovery also runs directly from browse(to:in:), without selectTab.
+        // Activate here so that path cannot leave the replacement hidden.
+        sessionManager.activate(replacementSession)
+        replacementSession.mediaSession.muteAudio(tab.isMuted)
+        systemMediaSession.select(session: replacementSession)
+        sessionManager.close(previousSession)
         delegate?.tabManager(
             self,
             didReplaceSelectedSession: previousSession,
@@ -591,7 +620,11 @@ final class TabManagerImplementation: NSObject, TabManager {
         
         let didTerminateSelectedTab = selectedTab?.session === session
         let tab = tabs(for: location.mode)[location.index]
-        if let sessionState = session.currentSessionState {
+        if let sessionState = session.currentSessionState,
+           restorableSessionState(
+               sessionState,
+               matching: restoredURL(from: tab.url)
+           ) != nil {
             tab.state.tabSessionState = sessionManager.usesStoredNavigationHistory(for: tab.id)
             ? sessionState.currentPageState()
             : sessionState
@@ -1430,7 +1463,11 @@ extension TabManagerImplementation: ContentDelegate {
     }
     
     func onSlowScript(session: GeckoSession, scriptFileName: String) async -> SlowScriptResponse {
-        return .halt
+        // A temporary stall (including one caused by suspension) is not a
+        // reason to abort a site's JavaScript and leave its UI half updated.
+        // Gecko's wait response lets the user reload/close a truly stuck tab.
+        NSLog("Reynard: waiting for a slow content script")
+        return .resume
     }
     
     func onShowDynamicToolbar(session: GeckoSession) {}
@@ -1593,7 +1630,10 @@ extension TabManagerImplementation: NavigationDelegate {
             url: uri,
             tabID: tabID,
             isPrivate: sourceIsPrivate,
-            opening: .external,
+            // Finish opening Gecko's requested window before exposing the tab
+            // to UI callbacks. Selection of a still-closed session would run
+            // crash recovery and replace the window, losing its opener.
+            opening: .immediate(windowID: windowId),
             delegates: sessionDelegates
         )
         sessionManager.universalLinkManager.didCreateNewSession(from: session, for: uri)
@@ -1634,13 +1674,14 @@ extension TabManagerImplementation: NavigationDelegate {
         
         guard target != .background else { return newSession }
         
-        if let previousSession = selectedTab?.session,
-           previousSession !== newSession {
-            sessionManager.deactivate(previousSession)
-        }
         selectedTabMode = mode
         delegate?.tabManager(self, animateNewTabSelectionAt: index) { [weak self] in
-            self?.selectTab(at: index, mode: mode)
+            guard let self,
+                  let currentIndex = self.tabs(for: mode).firstIndex(where: { $0.id == tabID }) else {
+                return
+            }
+            // selectTab deactivates the opener when selection actually occurs.
+            self.selectTab(at: currentIndex, mode: mode)
         }
         return newSession
     }
@@ -1683,6 +1724,14 @@ extension TabManagerImplementation: ProgressDelegate {
             return
         }
         let tab = tabs(for: location.mode)[location.index]
+        // A new Gecko window may publish about:blank before restoration.
+        // Keep the saved page/form data until real page history arrives.
+        if hasDisplayURL(for: tab),
+           let index = sessionState.currentHistoryIndex,
+           sessionState.history.indices.contains(index),
+           restoredURL(from: sessionState.history[index].url) == nil {
+            return
+        }
         tab.state.tabSessionState = sessionManager.usesStoredNavigationHistory(for: tab.id)
         ? sessionState.currentPageState()
         : sessionState
@@ -1690,6 +1739,9 @@ extension TabManagerImplementation: ProgressDelegate {
     }
     
     func onPageStart(session: GeckoSession, url: String) {
+        if let host = URL(string: url)?.host?.lowercased(), host == "chatgpt.com" || host == "chat.openai.com" {
+            GeckoRuntime.recordDiagnostic("ChatGPT navigation start")
+        }
         guard let location = tabLocation(for: session) else {
             return
         }
@@ -1724,6 +1776,9 @@ extension TabManagerImplementation: ProgressDelegate {
             return
         }
         let tab = tabs(for: location.mode)[location.index]
+        if let host = URL(string: tab.url ?? "")?.host?.lowercased(), host == "chatgpt.com" || host == "chat.openai.com" {
+            GeckoRuntime.recordDiagnostic("ChatGPT navigation stop success=\(success)")
+        }
         
         if tab.state.isSuppressingInitialBlankPageLoad {
             tab.state.isSuppressingInitialBlankPageLoad = false

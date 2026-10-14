@@ -111,7 +111,10 @@ final class FilePicker: NSObject {
     // MARK: - Presentation
     
     func present() async -> [String: Any]? {
-        await withCheckedContinuation { continuation in
+        // Hand focus to native picker UI before creating its menu. Retaining
+        // the content keyboard makes UIKit reposition the menu during display.
+        geckoView?.window?.endEditing(true)
+        return await withCheckedContinuation { continuation in
             self.continuation = continuation
             if let preferredInitialAction {
                 DispatchQueue.main.async { [weak self] in

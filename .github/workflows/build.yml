@@ -27,13 +27,17 @@ on:
         required: false
         default: true
         type: boolean
+      preserve_engine:
+        description: Save compiled engine for recovery if app packaging fails
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
   prepare:
-    if: ${{ github.repository_owner == 'minh-ton' }}
     name: Select build variants
     runs-on: ubuntu-latest
     outputs:
@@ -158,6 +162,40 @@ jobs:
           CXX: clang++
           LD: ld64.lld
         run: ./tools/development/build-gecko.sh ${{ matrix.build_args }}
+
+      - name: Preserve successfully compiled engine
+        if: ${{ inputs.preserve_engine }}
+        env:
+          ENGINE_VARIANT: ${{ matrix.variant }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+          metadata = {
+              "commit": git("rev-parse", "HEAD"),
+              "engine_tree": git("rev-parse", "HEAD:engine"),
+              "patches_tree": git("rev-parse", "HEAD:patches"),
+              "firefox_commit": git("-C", "engine/firefox", "rev-parse", "HEAD"),
+              "variant": os.environ["ENGINE_VARIANT"],
+              "release": Path("engine/release.txt").read_text().strip(),
+          }
+          Path(os.environ["RUNNER_TEMP"], "engine-metadata.json").write_text(json.dumps(metadata, indent=2))
+          PY
+          tar -chzf "$RUNNER_TEMP/Reynard-Gecko-${{ matrix.variant }}.tar.gz" \
+            -C engine/firefox/obj-aarch64-apple-ios/dist bin include \
+            -C "$RUNNER_TEMP" engine-metadata.json
+
+      - name: Upload engine recovery archive
+        if: ${{ inputs.preserve_engine }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gecko-Recovery-${{ matrix.variant }}-${{ github.sha }}
+          path: ${{ runner.temp }}/Reynard-Gecko-${{ matrix.variant }}.tar.gz
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
 
       - name: Build idevice support library
         run: ./tools/development/build-idevice.sh

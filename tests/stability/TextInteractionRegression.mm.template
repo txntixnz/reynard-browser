@@ -1,0 +1,101 @@
+// Executes the actual production delegate method with geometry/engine doubles.
+// This checks routing policy, not UIKit recognizer timing or device behavior.
+#import <Foundation/Foundation.h>
+#import <CoreGraphics/CoreGraphics.h>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+
+@interface UITextInteraction : NSObject
+@end
+@implementation UITextInteraction
+@end
+
+struct LayoutDeviceIntRect { int x, y, width, height; };
+namespace widget {
+struct TextInputHandler {
+  bool available = true;
+  LayoutDeviceIntRect rect = {80, 320, 440, 80};
+  bool EditorRect(LayoutDeviceIntRect& result) {
+    result = rect;
+    return available;
+  }
+};
+}
+enum GeckoSelectionHandle { GeckoSelectionHandleNone, GeckoSelectionHandleStart };
+static CGRect DevPixelsToUIKitPoints(LayoutDeviceIntRect rect, CGFloat scale) {
+  return CGRectMake(rect.x / scale, rect.y / scale, rect.width / scale, rect.height / scale);
+}
+static bool ClipCGRectToBounds(CGRect& rect, CGRect bounds) {
+  rect = CGRectIntersection(rect, bounds);
+  return !CGRectIsNull(rect) && !CGRectIsEmpty(rect);
+}
+struct Editable {
+  __strong UITextInteraction* mEditableTextInteraction;
+  __strong UITextInteraction* mNonEditableTextInteraction;
+};
+@interface ChildView : NSObject {
+@public
+  Editable mEditable;
+  widget::TextInputHandler handler;
+  bool hasHandler;
+  bool nearHandle;
+  int trackingCalls;
+  NSRange range;
+}
+- (CGRect)bounds;
+- (CGFloat)contentScaleFactor;
+- (widget::TextInputHandler*)textHandler;
+- (NSRange)selectedRange;
+- (GeckoSelectionHandle)closestHandleToPoint:(CGPoint)point range:(NSRange)selection handler:(widget::TextInputHandler*)value;
+- (void)setSelectionHandlesVisible:(BOOL)visible;
+- (void)startHandleTrackingAtPoint:(CGPoint)point range:(NSRange)selection handler:(widget::TextInputHandler*)value;
+- (BOOL)interactionShouldBegin:(UITextInteraction*)interaction atPoint:(CGPoint)point;
+@end
+@implementation ChildView
+- (CGRect)bounds { return CGRectMake(0, 0, 300, 600); }
+- (CGFloat)contentScaleFactor { return 2; }
+- (widget::TextInputHandler*)textHandler { return hasHandler ? &handler : nullptr; }
+- (NSRange)selectedRange { return range; }
+- (GeckoSelectionHandle)closestHandleToPoint:(CGPoint)point range:(NSRange)selection handler:(widget::TextInputHandler*)value {
+  return nearHandle ? GeckoSelectionHandleStart : GeckoSelectionHandleNone;
+}
+- (void)setSelectionHandlesVisible:(BOOL)visible {}
+- (void)startHandleTrackingAtPoint:(CGPoint)point range:(NSRange)selection handler:(widget::TextInputHandler*)value { trackingCalls++; }
+// INTERACTION_METHOD
+@end
+
+static void check(bool result, const char* name) {
+  if (!result) { std::fprintf(stderr, "FAIL: %s\n", name); std::abort(); }
+  std::printf("PASS: %s\n", name);
+}
+int main() {
+  @autoreleasepool {
+    ChildView* view = [ChildView new];
+    view->hasHandler = true;
+    view->range = NSMakeRange(0, 0);
+    view->mEditable.mEditableTextInteraction = [UITextInteraction new];
+    view->mEditable.mNonEditableTextInteraction = [UITextInteraction new];
+    UITextInteraction* editable = view->mEditable.mEditableTextInteraction;
+    check([view interactionShouldBegin:editable atPoint:CGPointMake(75, 180)], "text taps use UIKit with device pixels converted to points");
+    int before = view->trackingCalls;
+    check(![view interactionShouldBegin:editable atPoint:CGPointMake(20, 225)], "attachment plus button outside the editor reaches Gecko");
+    check(![view interactionShouldBegin:editable atPoint:CGPointMake(70, 120)], "attachment popup outside the editor reaches Gecko");
+    check(view->trackingCalls == before, "rejected page taps cannot start native selection tracking");
+    view->hasHandler = false;
+    check(![view interactionShouldBegin:editable atPoint:CGPointMake(75, 180)], "missing editor geometry cannot capture a page tap");
+    view->hasHandler = true;
+    view->handler.available = false;
+    check(![view interactionShouldBegin:editable atPoint:CGPointMake(75, 180)], "failed editor query cannot capture a page tap");
+    view->handler.available = true;
+    view->handler.rect = {80, -100, 440, 40};
+    check(![view interactionShouldBegin:editable atPoint:CGPointMake(75, 10)], "fully clipped editors cannot capture visible page taps");
+    view->range = NSMakeRange(3, 5);
+    view->nearHandle = true;
+    check([view interactionShouldBegin:editable atPoint:CGPointMake(35, 180)], "selection handles outside editor bounds remain draggable");
+    view->range = NSMakeRange(3, 0);
+    check(![view interactionShouldBegin:editable atPoint:CGPointMake(35, 180)], "collapsed selections do not create an outside handle exception");
+    check([view interactionShouldBegin:view->mEditable.mNonEditableTextInteraction atPoint:CGPointMake(70, 120)], "noneditable page text selection remains available");
+    check(![view interactionShouldBegin:[UITextInteraction new] atPoint:CGPointMake(70, 120)], "unowned native interactions remain rejected");
+  }
+}

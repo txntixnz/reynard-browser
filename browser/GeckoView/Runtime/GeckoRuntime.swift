@@ -21,6 +21,27 @@ public final class GeckoScreenOrientationController {
 }
 
 class GeckoRuntimeImpl: NSObject, SwiftGeckoViewRuntime {
+    private var backgroundProcessMonitors: [Int32: (UUID, DispatchSourceProcess)] = [:]
+
+    private func trackBackgroundProcess(pid: Int32, processType: String) {
+        guard pid > 1 else { return }
+        guard backgroundProcessMonitors[pid] == nil else { return }
+        // Monitor every child exit, but only protect content and sockets.
+        // GPU processes retain their normal foreground rendering lifecycle.
+        let protected = processType == "tab" || processType == "socket"
+        GeckoRuntimeBridge.recordDiagnostic("child started type=\(processType) pid=\(pid)")
+        let generation = UUID()
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+        backgroundProcessMonitors[pid] = (generation, source)
+        source.setEventHandler { [weak self] in
+            guard let self, backgroundProcessMonitors[pid]?.0 == generation else { return }
+            GeckoRuntimeBridge.recordDiagnostic("child exited type=\(processType) pid=\(pid)")
+            if protected { GeckoRuntimeBridge.removeBackgroundProcess(pid) }
+            backgroundProcessMonitors.removeValue(forKey: pid)?.1.cancel()
+        }
+        source.resume()
+        if protected { GeckoRuntimeBridge.registerBackgroundProcess(pid) }
+    }
     func runtimeDispatcher() -> any SwiftEventDispatcher {
         return GeckoEventDispatcherWrapper.runtimeInstance
     }
@@ -33,6 +54,9 @@ class GeckoRuntimeImpl: NSObject, SwiftGeckoViewRuntime {
     func childProcessDidStart(withPID pid: Int32, processType: String) {
         // Update jetsam limit for the child process
         updateJetsamControl(pid)
+        DispatchQueue.main.async { [weak self] in
+            self?.trackBackgroundProcess(pid: pid, processType: processType)
+        }
         
         NotificationCenter.default.post(
             name: Notification.Name("GeckoRuntime.ChildProcessDidStart"),
@@ -75,6 +99,16 @@ public class GeckoRuntime {
     public static var version: String {
         return GeckoRuntimeBridge.version()
     }
+
+    public static func beginBackgroundGrace() { GeckoRuntimeBridge.beginBackgroundGrace() }
+    public static var hasBackgroundGrace: Bool { GeckoRuntimeBridge.hasBackgroundGrace() }
+    public static func endBackgroundGrace() { GeckoRuntimeBridge.endBackgroundGrace() }
+    public static func beginBackgroundDownloadGrace() { GeckoRuntimeBridge.beginBackgroundDownloadGrace() }
+    public static var hasBackgroundDownloadGrace: Bool { GeckoRuntimeBridge.hasBackgroundDownloadGrace() }
+    public static func endBackgroundDownloadGrace() { GeckoRuntimeBridge.endBackgroundDownloadGrace() }
+    public static func recordDiagnostic(_ message: String) { GeckoRuntimeBridge.recordDiagnostic(message) }
+    public static var backgroundDiagnosticSnapshot: String { GeckoRuntimeBridge.backgroundDiagnosticSnapshot() }
+    public static var diagnosticReport: String { GeckoRuntimeBridge.diagnosticReport() }
     
     public static func setLocale(acceptLanguages: String) {
         GeckoEventDispatcherWrapper.runtimeInstance.dispatch(
