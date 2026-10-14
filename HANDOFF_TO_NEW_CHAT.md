@@ -1,3 +1,48 @@
+## Device log identifies unavailable background API (2026-10-14)
+
+User attached Reynard-Connection-Diagnostics.txt (read directly from scratch upload).
+It confirms installed candidate 0.17.1 / b6d5a9f, HTTP3=false, iOS16.0,
+normal thermal state, low power off. At 15:18:48 UTC page activity requested with
+entitled=true, but every private acquisition reported "background assertion API
+unavailable". Host and all registered child grants stayed absent/invalid. UIKit
+ended the first activity at 15:19:16, about 28 seconds later; app returned 15:19:43.
+The two-hour policy was never actual protection in this captured interval.
+This proves an implementation defect in our API selection/fallback, not every
+ChatGPT request failure. One tab process also exited, without a logged content
+crash/kill; cannot establish that it was the selected ChatGPT process. HTTP3 being
+off does not rule out every transport issue. Do not overstate the evidence.
+
+New candidate prefers RunningBoard using RBSAssertion, RBSTarget and
+RBSDomainAttribute (com.apple.webkit / Background), as declared and used in
+WebKit webkitgtk-2.38.0 iOS source (2022, iOS16 era). Added only the corresponding
+com.apple.runningboard.assertions.webkit entitlement to the private app plist;
+ordinary app entitlement profiles are unchanged. BKS remains only for older OSes
+where RunningBoard APIs/selectors are unavailable. An explicit modern OS denial
+is logged with error domain/code/reason and does not silently try legacy.
+
+Acquisition runs on a serial worker queue to avoid waiting for IPC on the UI
+thread. UIKit protects the transition. Per-PID request tokens reject late grants
+after the last owner ends or the child exits/restarts. Pending, valid and absent
+grants are distinct in snapshots. Invalid cached assertions do not block a later
+request. Owner separation, foreground/deadline cleanup and GPU exclusion remain.
+Live-page logs identify actual grants versus the UIKit fallback, not just a
+requested two-hour maximum. The successful grant and ability to execute beyond
+UIKit expiry STILL need the user's next phone test; source/CI cannot prove them.
+
+Replaced the old native fixture (which always supplied the unavailable BKS API)
+with runtime-controlled RunningBoard/legacy doubles. Tests cover RBS while BKS
+absent, both APIs absent, incomplete selectors, explicit denial, stale invalid
+cache, late owner/child callbacks, duplicate requests and independent downloads.
+CI still builds app/framework/helpers using the exact verified official 0.17.1
+engine. HTTP3 remains false in this candidate; no unrelated cache, scrolling,
+privacy, cookie or request-replay changes. No native engine rebuild.
+
+Workflow/artifact: iOS 16 - 0.17.1 RunningBoard Background Fix /
+Reynard-0.17.1-RunningBoard-Fix-TrollStore, contains Reynard-TrollStore.tipa.
+User reports build finish. Export the same diagnostics after a background failure
+or a successful test beyond one minute; look for RunningBoard acquired=1 valid=1
+and continued checkpoints. Missing messages and scrolling are not confirmed fixed.
+
 ## Connection comparison and diagnostics candidate (2026-10-14)
 
 User explicitly confirms they installed OUR workflow 38346076209, not official

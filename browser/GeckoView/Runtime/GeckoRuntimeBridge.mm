@@ -11,16 +11,32 @@
 #import <dlfcn.h>
 #import <unistd.h>
 
-// AssertionServices is loaded only for the entitled TrollStore background
-// window. These selectors are runtime checked; ordinary installs use UIKit.
-// SPI signatures: nst/iOS-Runtime-Headers, AssertionServices/BKSProcessAssertion.h
-// Flags/reason: WebKit's AssertionServicesSPI.h (FinishTaskUnbounded).
-@protocol RYNBackgroundAssertion <NSObject>
+// Runtime-load private APIs only for entitled installs. RunningBoard signatures
+// and the WebKit Background domain come from WebKit's 2022 iOS implementation:
+// webkitgtk-2.38.0/Source/WebKit/{Platform/spi/ios/RunningBoardServicesSPI.h,
+// UIProcess/ios/ProcessAssertionIOS.mm}. Keep BKS only as an older-OS fallback.
+@protocol RYNProcessAssertion <NSObject>
+- (BOOL)isValid;
+- (void)invalidate;
+@end
+
+@protocol RYNRunningBoardTarget <NSObject>
++ (instancetype)targetWithPid:(pid_t)pid;
+@end
+
+@protocol RYNRunningBoardAttribute <NSObject>
++ (instancetype)attributeWithDomain:(NSString *)domain name:(NSString *)name;
+@end
+
+@protocol RYNRunningBoardAssertion <RYNProcessAssertion>
+- (instancetype)initWithExplanation:(NSString *)explanation target:(id)target attributes:(NSArray *)attributes;
+- (BOOL)acquireWithError:(NSError **)error;
+@end
+
+@protocol RYNBackgroundAssertion <RYNProcessAssertion>
 - (instancetype)initWithPID:(int)pid flags:(unsigned int)flags
                      reason:(unsigned int)reason name:(NSString *)name
                 withHandler:(void (^)(BOOL))handler;
-- (BOOL)isValid;
-- (void)invalidate;
 @end
 
 @interface GeckoRuntimeBridge ()
@@ -29,10 +45,18 @@
 @end
 
 static NSMutableSet<NSNumber *> *sBackgroundProcesses;
-static NSMutableDictionary<NSNumber *, id<RYNBackgroundAssertion>> *sBackgroundAssertions;
+static NSMutableDictionary<NSNumber *, id<RYNProcessAssertion>> *sBackgroundAssertions;
 static NSMutableSet<NSString *> *sBackgroundOwners;
+static NSMutableDictionary<NSNumber *, NSUUID *> *sPendingAssertions;
 static NSMutableArray<NSString *> *sDiagnosticEvents;
 static const NSUInteger kDiagnosticEventLimit = 240;
+
+static dispatch_queue_t AssertionQueue() {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("com.minh-ton.Reynard.background-assertions", DISPATCH_QUEUE_SERIAL); });
+    return queue;
+}
 
 static NSString *DiagnosticLogPath() {
     NSString *directory = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
@@ -74,18 +98,75 @@ static void RecordDiagnostic(NSString *message) {
 static void AcquireBackgroundAssertion(int32_t pid) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        dlopen("/System/Library/PrivateFrameworks/AssertionServices.framework/AssertionServices", RTLD_LAZY);
+        for (NSString *framework in @[@"AssertionServices", @"RunningBoardServices"]) {
+            NSString *path = [NSString stringWithFormat:@"/System/Library/PrivateFrameworks/%@.framework/%@", framework, framework];
+            void *handle = dlopen(path.UTF8String, RTLD_LAZY | RTLD_LOCAL);
+            RecordDiagnostic([NSString stringWithFormat:@"background framework %@ %@", framework, handle ? @"loaded" : @"unavailable"]);
+        }
     });
+    id<RYNProcessAssertion> existing = sBackgroundAssertions[@(pid)];
+    if ([existing isValid]) { return; }
+    if (sPendingAssertions[@(pid)]) { return; }
+    [existing invalidate];
+    [sBackgroundAssertions removeObjectForKey:@(pid)];
+
+    Class runningClass = NSClassFromString(@"RBSAssertion");
+    Class targetClass = NSClassFromString(@"RBSTarget");
+    Class attributeClass = NSClassFromString(@"RBSDomainAttribute");
+    BOOL hasRunningBoard = runningClass && targetClass && attributeClass &&
+        [targetClass respondsToSelector:@selector(targetWithPid:)] &&
+        [attributeClass respondsToSelector:@selector(attributeWithDomain:name:)] &&
+        [runningClass instancesRespondToSelector:@selector(initWithExplanation:target:attributes:)] &&
+        [runningClass instancesRespondToSelector:@selector(acquireWithError:)] &&
+        [runningClass instancesRespondToSelector:@selector(isValid)] &&
+        [runningClass instancesRespondToSelector:@selector(invalidate)];
+    if (hasRunningBoard) {
+        id target = [(Class<RYNRunningBoardTarget>)targetClass targetWithPid:pid];
+        id attribute = [(Class<RYNRunningBoardAttribute>)attributeClass attributeWithDomain:@"com.apple.webkit" name:@"Background"];
+        if (!target || !attribute) {
+            RecordDiagnostic([NSString stringWithFormat:@"RunningBoard target/attribute creation failed pid=%d", pid]);
+            return;
+        }
+        id<RYNRunningBoardAssertion> assertion = [(id<RYNRunningBoardAssertion>)[runningClass alloc]
+            initWithExplanation:@"Reynard background network activity" target:target attributes:@[attribute]];
+        if (!sPendingAssertions) { sPendingAssertions = [NSMutableDictionary dictionary]; }
+        NSUUID *request = [NSUUID UUID];
+        sPendingAssertions[@(pid)] = request;
+        // RunningBoard acquisition can wait for an IPC reply. Keep it off the
+        // UI thread while UIKit protects the transition. Never retain a late
+        // grant after the owner ended or the target process exited/restarted.
+        dispatch_async(AssertionQueue(), ^{
+            NSError *error = nil;
+            BOOL acquired = [assertion acquireWithError:&error];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                BOOL valid = acquired && [assertion isValid];
+                RecordDiagnostic([NSString stringWithFormat:@"RunningBoard pid=%d acquired=%d valid=%d errorDomain=%@ code=%ld reason=%@",
+                                  pid, acquired, valid, error.domain ?: @"none", (long)error.code, error.localizedFailureReason ?: error.localizedDescription ?: @"none"]);
+                if (sPendingAssertions[@(pid)] != request || sBackgroundOwners.count == 0) {
+                    [assertion invalidate];
+                    RecordDiagnostic([NSString stringWithFormat:@"RunningBoard late grant released pid=%d", pid]);
+                    return;
+                }
+                [sPendingAssertions removeObjectForKey:@(pid)];
+                if (valid) { sBackgroundAssertions[@(pid)] = assertion; }
+                else { [assertion invalidate]; }
+            });
+        });
+        // Do not silently substitute an old API after an explicit OS denial.
+        return;
+    }
+    RecordDiagnostic([NSString stringWithFormat:@"RunningBoard API unavailable assertionClass=%d targetClass=%d attributeClass=%d", !!runningClass, !!targetClass, !!attributeClass]);
     Class assertionClass = NSClassFromString(@"BKSProcessAssertion");
     if (!assertionClass ||
         ![assertionClass instancesRespondToSelector:@selector(initWithPID:flags:reason:name:withHandler:)] ||
         ![assertionClass instancesRespondToSelector:@selector(isValid)] ||
         ![assertionClass instancesRespondToSelector:@selector(invalidate)]) {
-        NSLog(@"Reynard: background assertion API unavailable");
-        RecordDiagnostic(@"background assertion API unavailable");
+        RecordDiagnostic([NSString stringWithFormat:@"BKS API unavailable class=%d init=%d valid=%d invalidate=%d", !!assertionClass,
+                          [assertionClass instancesRespondToSelector:@selector(initWithPID:flags:reason:name:withHandler:)],
+                          [assertionClass instancesRespondToSelector:@selector(isValid)],
+                          [assertionClass instancesRespondToSelector:@selector(invalidate)]]);
         return;
     }
-    if (sBackgroundAssertions[@(pid)]) { return; }
     // PreventTaskSuspend | AllowIdleSleep. Do not request foreground GPU/UI
     // priority or keep the screen awake while continuing the page's network work.
     id<RYNBackgroundAssertion> assertion = [(id<RYNBackgroundAssertion>)[assertionClass alloc]
@@ -93,7 +174,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
         withHandler:^(BOOL acquired) {
             NSLog(@"Reynard: background assertion PID %d %@", pid,
                   acquired ? @"acquired" : @"denied");
-            RecordDiagnostic([NSString stringWithFormat:@"background assertion pid=%d %@", pid,
+            RecordDiagnostic([NSString stringWithFormat:@"BKS background assertion pid=%d %@", pid,
                               acquired ? @"acquired" : @"denied"]);
         }];
     if (assertion) { sBackgroundAssertions[@(pid)] = assertion; }
@@ -111,10 +192,10 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     NSString *owners = [[sBackgroundOwners.allObjects sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@","];
     [parts addObject:[NSString stringWithFormat:@"owners=%@ hostAssertion=%@",
                       owners.length ? owners : @"none",
-                      [sBackgroundAssertions[@(getpid())] isValid] ? @"valid" : @"absent-or-invalid"]];
+                      [sBackgroundAssertions[@(getpid())] isValid] ? @"valid" : sPendingAssertions[@(getpid())] ? @"pending" : @"absent-or-invalid"]];
     for (NSNumber *pid in [sBackgroundProcesses.allObjects sortedArrayUsingSelector:@selector(compare:)]) {
         [parts addObject:[NSString stringWithFormat:@"child=%@ assertion=%@", pid,
-                          [sBackgroundAssertions[pid] isValid] ? @"valid" : @"absent-or-invalid"]];
+                          [sBackgroundAssertions[pid] isValid] ? @"valid" : sPendingAssertions[pid] ? @"pending" : @"absent-or-invalid"]];
     }
     return [parts componentsJoinedByString:@"; "];
 }
@@ -141,6 +222,7 @@ static void AcquireBackgroundAssertion(int32_t pid) {
 + (void)removeBackgroundProcess:(int32_t)pid {
     NSAssert([NSThread isMainThread], @"Background process registry must use the main thread");
     [sBackgroundProcesses removeObject:@(pid)];
+    [sPendingAssertions removeObjectForKey:@(pid)];
     [sBackgroundAssertions[@(pid)] invalidate];
     [sBackgroundAssertions removeObjectForKey:@(pid)];
 }
@@ -186,7 +268,8 @@ static void AcquireBackgroundAssertion(int32_t pid) {
     NSAssert([NSThread isMainThread], @"Background assertions must use the main thread");
     [sBackgroundOwners removeObject:owner];
     if (sBackgroundOwners.count > 0) { return; }
-    for (id<RYNBackgroundAssertion> assertion in sBackgroundAssertions.allValues) {
+    [sPendingAssertions removeAllObjects];
+    for (id<RYNProcessAssertion> assertion in sBackgroundAssertions.allValues) {
         [assertion invalidate];
     }
     [sBackgroundAssertions removeAllObjects];

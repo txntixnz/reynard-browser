@@ -54,7 +54,8 @@ final class LivePageBackgroundTask {
         let duration = Self.maximumDuration
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: deadline)
         NSLog("Reynard: live-page background window requested (maximum %.0f seconds)", duration)
-        GeckoRuntime.recordDiagnostic("live-page start maximum=\(Int(duration))s \(GeckoRuntime.backgroundDiagnosticSnapshot)")
+        let mode = GeckoRuntime.hasBackgroundGrace ? "OS assertion granted" : "no private grant yet; UIKit fallback active"
+        GeckoRuntime.recordDiagnostic("live-page start mode=\(mode) policyMaximum=\(Int(duration))s \(GeckoRuntime.backgroundDiagnosticSnapshot)")
         let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
             guard let self, self.generation == generation else { return }
             GeckoRuntime.recordDiagnostic("live-page checkpoint \(GeckoRuntime.backgroundDiagnosticSnapshot)")

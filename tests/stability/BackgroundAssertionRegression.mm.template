@@ -5,27 +5,93 @@
 
 static NSMutableArray *created;
 static BOOL permitted = YES;
-@interface BKSProcessAssertion : NSObject
+static BOOL runningAvailable = YES;
+static BOOL legacyAvailable = NO;
+static BOOL incompleteRunningAPI = NO;
+
+@interface RYNTestAssertionBase : NSObject
 @property BOOL valid;
 @property int pid;
-- (instancetype)initWithPID:(int)pid flags:(unsigned int)flags reason:(unsigned int)reason name:(NSString *)name withHandler:(void (^)(BOOL))handler;
 - (BOOL)isValid;
 - (void)invalidate;
 @end
-@implementation BKSProcessAssertion
-- (instancetype)initWithPID:(int)pid flags:(unsigned int)flags reason:(unsigned int)reason name:(NSString *)name withHandler:(void (^)(BOOL))handler {
-    self = [super init];
-    if (self) {
-        NSCAssert(flags == 5 && reason == 10004, @"Unexpected assertion scope");
-        self.pid = pid; self.valid = permitted;
-        [created addObject:self]; handler(permitted);
-    }
-    return self;
-}
+@implementation RYNTestAssertionBase
 - (BOOL)isValid { return self.valid; }
 - (void)invalidate { self.valid = NO; }
 @end
+
+@interface RYNTestTarget : NSObject
+@property int pid;
++ (instancetype)targetWithPid:(pid_t)pid;
+@end
+@implementation RYNTestTarget
++ (instancetype)targetWithPid:(pid_t)pid {
+    RYNTestTarget *target = [self new]; target.pid = pid; return target;
+}
+@end
+
+@interface RYNTestAttribute : NSObject
++ (instancetype)attributeWithDomain:(NSString *)domain name:(NSString *)name;
+@end
+@implementation RYNTestAttribute
++ (instancetype)attributeWithDomain:(NSString *)domain name:(NSString *)name {
+    NSCAssert([domain isEqual:@"com.apple.webkit"] && [name isEqual:@"Background"], @"Unexpected RunningBoard scope");
+    return [self new];
+}
+@end
+
+@interface RYNTestRunningAssertion : RYNTestAssertionBase
+- (instancetype)initWithExplanation:(NSString *)explanation target:(RYNTestTarget *)target attributes:(NSArray *)attributes;
+- (BOOL)acquireWithError:(NSError **)error;
+@end
+@implementation RYNTestRunningAssertion
+- (instancetype)initWithExplanation:(NSString *)explanation target:(RYNTestTarget *)target attributes:(NSArray *)attributes {
+    self = [super init];
+    if (self) { NSCAssert(target && attributes.count == 1, @"Missing RunningBoard target/attribute"); self.pid = target.pid; [created addObject:self]; }
+    return self;
+}
+- (BOOL)acquireWithError:(NSError **)error {
+    self.valid = permitted;
+    if (!permitted && error) { *error = [NSError errorWithDomain:@"RBSAssertionErrorDomain" code:2 userInfo:@{NSLocalizedDescriptionKey: @"test denial"}]; }
+    return permitted;
+}
+@end
+
+@interface RYNTestLegacyAssertion : RYNTestAssertionBase
+- (instancetype)initWithPID:(int)pid flags:(unsigned int)flags reason:(unsigned int)reason name:(NSString *)name withHandler:(void (^)(BOOL))handler;
+@end
+@implementation RYNTestLegacyAssertion
+- (instancetype)initWithPID:(int)pid flags:(unsigned int)flags reason:(unsigned int)reason name:(NSString *)name withHandler:(void (^)(BOOL))handler {
+    self = [super init];
+    if (self) {
+        NSCAssert(flags == 5 && reason == 10004, @"Unexpected legacy assertion scope");
+        self.pid = pid; self.valid = permitted; [created addObject:self]; handler(permitted);
+    }
+    return self;
+}
+@end
+
+static Class TestAssertionClass(NSString *name) {
+    if ([name isEqual:@"BKSProcessAssertion"]) { return legacyAvailable ? [RYNTestLegacyAssertion class] : Nil; }
+    if (!runningAvailable) { return Nil; }
+    if ([name isEqual:@"RBSAssertion"]) { return incompleteRunningAPI ? [NSObject class] : [RYNTestRunningAssertion class]; }
+    if ([name isEqual:@"RBSTarget"]) { return [RYNTestTarget class]; }
+    if ([name isEqual:@"RBSDomainAttribute"]) { return [RYNTestAttribute class]; }
+    return Nil;
+}
+
 // BRIDGE_SOURCE
+
+static void DrainAssertions() {
+    dispatch_sync(AssertionQueue(), ^{});
+    __block BOOL drained = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ drained = YES; });
+    NSDate *limit = [NSDate dateWithTimeIntervalSinceNow:2];
+    while (!drained && limit.timeIntervalSinceNow > 0) {
+        [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.002]];
+    }
+    NSCAssert(drained, @"Queued acquisition callbacks must complete");
+}
 
 int main() {
     @autoreleasepool {
@@ -33,38 +99,79 @@ int main() {
         [GeckoRuntimeBridge registerBackgroundProcess:0];
         [GeckoRuntimeBridge registerBackgroundProcess:42001];
         [GeckoRuntimeBridge beginBackgroundGrace];
-        NSCAssert(created.count == 2 && [GeckoRuntimeBridge hasBackgroundGrace], @"Host and registered child must acquire activity");
+        DrainAssertions();
+        NSCAssert(created.count == 2 && [GeckoRuntimeBridge hasBackgroundGrace], @"RunningBoard must work when the legacy BKS class is absent");
+        NSCAssert([created[0] isKindOfClass:[RYNTestRunningAssertion class]], @"Use RunningBoard instead of legacy BKS");
         NSString *snapshot = [GeckoRuntimeBridge backgroundDiagnosticSnapshot];
         NSCAssert([snapshot containsString:@"hostAssertion=valid"] && [snapshot containsString:@"child=42001 assertion=valid"], @"Diagnostic snapshot must distinguish host and child grants");
         [GeckoRuntimeBridge beginBackgroundGrace];
-        NSCAssert(created.count == 2, @"Duplicate request must not acquire duplicate assertions");
-        [GeckoRuntimeBridge registerBackgroundProcess:42002];
-        NSCAssert(created.count == 3, @"New child must join existing background window");
-        [GeckoRuntimeBridge removeBackgroundProcess:42001];
-        NSCAssert(![(BKSProcessAssertion *)created[1] isValid], @"Exited child assertion must be released");
-        [GeckoRuntimeBridge endBackgroundGrace];
-        for (BKSProcessAssertion *assertion in created) { NSCAssert(!assertion.valid, @"Cleanup must release every assertion"); }
-        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Grace must end");
+        DrainAssertions();
+        NSCAssert(created.count == 2, @"Repeated start must not duplicate valid assertions");
+        ((RYNTestAssertionBase *)created[0]).valid = NO;
         [GeckoRuntimeBridge beginBackgroundGrace];
+        DrainAssertions();
+        NSCAssert(created.count == 3 && [GeckoRuntimeBridge hasBackgroundGrace], @"A stale invalid assertion must not block a later acquisition");
+        [GeckoRuntimeBridge registerBackgroundProcess:42002];
+        DrainAssertions();
+        NSCAssert(created.count == 4, @"New child must join existing background window");
+        [GeckoRuntimeBridge removeBackgroundProcess:42001];
+        NSCAssert(![(RYNTestAssertionBase *)created[1] isValid], @"Exited child assertion must be released");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        for (RYNTestAssertionBase *assertion in created) { NSCAssert(!assertion.valid, @"Cleanup must release every assertion"); }
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        DrainAssertions();
         [GeckoRuntimeBridge beginBackgroundDownloadGrace];
         NSUInteger overlapCount = created.count;
         [GeckoRuntimeBridge endBackgroundGrace];
         NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace] && [GeckoRuntimeBridge hasBackgroundDownloadGrace], @"Page ending must not suspend downloads");
         [GeckoRuntimeBridge beginBackgroundGrace];
+        DrainAssertions();
         NSCAssert(created.count == overlapCount, @"Overlapping owners must share assertions");
         [GeckoRuntimeBridge endBackgroundDownloadGrace];
         NSCAssert([GeckoRuntimeBridge hasBackgroundGrace] && ![GeckoRuntimeBridge hasBackgroundDownloadGrace], @"Download ending must not suspend page");
         [GeckoRuntimeBridge endBackgroundGrace];
-        for (BKSProcessAssertion *assertion in created) { NSCAssert(!assertion.valid, @"Last owner releases assertions"); }
+
         permitted = NO;
+        legacyAvailable = YES;
         [GeckoRuntimeBridge beginBackgroundGrace];
-        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Denied API result must not report protection");
-        NSCAssert([[GeckoRuntimeBridge backgroundDiagnosticSnapshot] containsString:@"hostAssertion=absent-or-invalid"], @"Diagnostic snapshot must report denied host grant");
+        DrainAssertions();
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"An OS denial must not report protection");
+        NSCAssert([created.lastObject isKindOfClass:[RYNTestRunningAssertion class]], @"An explicit denial must not silently fall back to legacy");
+        NSCAssert([[GeckoRuntimeBridge backgroundDiagnosticSnapshot] containsString:@"hostAssertion=absent-or-invalid"], @"Report denied host grant");
+        [GeckoRuntimeBridge endBackgroundGrace];
+
+        permitted = YES;
+        runningAvailable = NO;
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        DrainAssertions();
+        NSCAssert([GeckoRuntimeBridge hasBackgroundGrace] && [created.lastObject isKindOfClass:[RYNTestLegacyAssertion class]], @"Older OS can use the available legacy fallback");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        legacyAvailable = NO;
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        DrainAssertions();
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Both APIs unavailable must leave only UIKit fallback");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        runningAvailable = YES;
+        incompleteRunningAPI = YES;
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        DrainAssertions();
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"Missing selectors must not be invoked");
+        [GeckoRuntimeBridge endBackgroundGrace];
+        incompleteRunningAPI = NO;
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        [GeckoRuntimeBridge endBackgroundGrace];
+        DrainAssertions();
+        NSCAssert(![GeckoRuntimeBridge hasBackgroundGrace], @"A grant arriving after the owner ended must not retain activity");
+        for (RYNTestAssertionBase *assertion in created) { NSCAssert(!assertion.valid, @"Late grants must be invalidated"); }
+        [GeckoRuntimeBridge beginBackgroundGrace];
+        [GeckoRuntimeBridge removeBackgroundProcess:42002];
+        DrainAssertions();
+        NSCAssert(![[GeckoRuntimeBridge backgroundDiagnosticSnapshot] containsString:@"child=42002"], @"Exited targets must not return through pending callbacks");
         [GeckoRuntimeBridge endBackgroundGrace];
         for (NSUInteger i = 0; i < 245; ++i) { [GeckoRuntimeBridge recordDiagnostic:[NSString stringWithFormat:@"bounded-test-%lu", (unsigned long)i]]; }
         NSString *report = [GeckoRuntimeBridge diagnosticReport];
         NSCAssert(![report containsString:@"bounded-test-0\n"] && [report containsString:@"bounded-test-244"], @"Export must retain bounded recent events");
-        NSLog(@"PASS: native assertion acquisition, child exit, denial and complete cleanup");
+        NSLog(@"PASS: RunningBoard without BKS, denial, API unavailability, reacquisition, ownership and cleanup");
     }
     return 0;
 }

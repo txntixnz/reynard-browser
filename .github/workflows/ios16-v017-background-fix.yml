@@ -1,4 +1,4 @@
-name: iOS 16 - 0.17.1 ChatGPT Connection Test
+name: iOS 16 - 0.17.1 RunningBoard Background Fix
 
 on:
   push:
@@ -57,6 +57,6 @@ jobs:
         run: ./tools/release/create-ipa.sh --trollstore
       - uses: actions/upload-artifact@v4
         with:
-          name: Reynard-0.17.1-ChatGPT-Connection-Test-TrollStore
+          name: Reynard-0.17.1-RunningBoard-Fix-TrollStore
           path: dist/Reynard-TrollStore.tipa
           if-no-files-found: error
