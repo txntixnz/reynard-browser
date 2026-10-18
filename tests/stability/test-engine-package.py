@@ -5,6 +5,8 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import plistlib
+import shutil
 import tempfile
 import subprocess
 import unittest
@@ -18,6 +20,36 @@ engine = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(engine)
 
 class EnginePackageTests(unittest.TestCase):
+    def test_018_selects_matching_engine_headers_and_rejects_other_builds(self):
+        for version, build in [("0.18.0", "860bb6f"), ("0.17.1", "c4b79f7"), ("0.18.0", "incorrect")]:
+            with self.subTest(version=version, build=build), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / "engine").mkdir()
+                (root / "engine/release.txt").write_text("FIREFOX_158_0_RELEASE\n")
+                shutil.copytree(ROOT / "tools/prebuilt-gecko-headers-018", root / "tools/prebuilt-gecko-headers-018")
+                package = root / "release.tipa"
+                with zipfile.ZipFile(package, "w") as archive:
+                    archive.writestr(engine.PREFIX + "Info.plist", plistlib.dumps({
+                        "CFBundleShortVersionString": version, "CFBundleVersion": build,
+                    }))
+                    for library in engine.LIBRARIES:
+                        archive.writestr(engine.PREFIX + "Frameworks/" + library, b"fixture")
+                    for resource in ["chrome.manifest", "chrome/test", "components/test", "defaults/test", "res/test", "default-theme/manifest.json"]:
+                        archive.writestr(engine.RUNTIME + resource, b"fixture")
+                digest = hashlib.sha256(package.read_bytes()).hexdigest()
+                with patch.object(engine, "ROOT", root), patch.object(engine, "RELEASE_018_SHA256", digest), patch.object(engine, "verify_engine_sources") as verify, patch("sys.argv", ["prepare", "--release-018", "--package", str(package)]):
+                    if (version, build) != ("0.18.0", "860bb6f"):
+                        with self.assertRaisesRegex(RuntimeError, "version/build mismatch"):
+                            engine.main()
+                        continue
+                    engine.main()
+                    verify.assert_called_once_with(engine.RELEASE_018_COMMIT, False)
+                dist = root / "engine/firefox/obj-aarch64-apple-ios/dist"
+                self.assertEqual((dist / "include/mozilla-config.h").read_text(), '#define MOZILLA_VERSION "158.0"\n')
+                bridge = (dist / "include/GeckoView/GeckoViewSwiftSupport.h").read_text()
+                self.assertIn("@protocol GeckoViewKeyCommandDelegate", bridge)
+                self.assertIn("setKeyCommandDelegate:", bridge)
+
     def test_compile_check_allows_only_editor_implementation_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

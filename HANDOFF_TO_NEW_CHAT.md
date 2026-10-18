@@ -1,3 +1,45 @@
+## 0.18.0 integration (2026-10-18)
+
+User asked to include every custom fix with the new official update.
+Base: official 0.18.0, 860bb6f4d0ff2b5d45f7dbe48eca8f39ee88a4fa.
+New branch/workflow: ios16-v018-custom-fixes /
+iOS 16 - 0.18.0 Custom Fixes.
+Artifact: Reynard-0.18.0-Custom-Fixes-TrollStore / Reynard-TrollStore.tipa.
+
+Merged the complete release into 8b7dd737 without conflicts. Both overlapping
+Swift files retain upstream keyboard/image changes and our guarded focus/repaint
+behavior. All custom picker, popup window, session restoration, finite UIKit
+fallback, explicit host/helper suspension-prevention, download background owner,
+selected download-folder/bookmark, diagnostics, HTTP/3 control and signing checks
+remain. Existing user preferences and app identity are preserved.
+
+Reuse only the SHA-256-verified official 0.18.0 engine package:
+a04054f7e50dba037bb2c0f90d97476a02aa71eb6efee64ca3a14d141f9907e9.
+Gecko is 158.0 / FIREFOX_158_0_RELEASE. Engine and patches must be exactly the
+release. New bridge headers were derived from pinned Firefox source
+3c71aeacdb296402e41fb2084b13e797d1770642 by applying the release's three header
+patches. In particular the new key-command delegate and script annotation are
+required; never compile 0.18 app sources against the old 0.17 headers/binaries.
+The official package version 0.18.0 / build 860bb6f and checksum were verified
+locally. The new workflow builds app/helper targets, not Gecko.
+
+Device results AFTER the previous handoff: diagnostics (5) confirmed 8b7dd73's
+explicit flags and non-suspended host/socket tasks, with successful short returns.
+Diagnostics (6) recorded successful returns with the same host/socket after
+17m54s and 14m25s wall-clock background intervals, but also a new host/socket at
+2026-10-15 00:28:52 Brussels (2026-10-14 22:28:52 UTC). Cause is unknown; the
+matching IPS was requested and has NOT been received. Do not claim restarts fixed.
+Task inspection is a point-in-time observation, not proof ChatGPT kept executing.
+Sidebar infinite loading still reported. HTTP/3 was ON; user was asked to compare
+with it OFF and restart once. No comparison result has been received. Preserve
+the stored selection; do not claim this update fixes service stalls or messages.
+The new release adds scrolling/touch, audio and network-domain changes; their
+on-device effect on these unresolved issues remains to be tested.
+
+Validation and published run are recorded in the integration PR. User reports
+workflow completion/failure; do not monitor an entire build or request a new
+four-hour Gecko compile. Prior 0.17 custom branch remains available.
+
 ## Observer candidate failed; request task suspension prevention directly (2026-10-14)
 
 Latest device attachments, inspected directly from scratch:
