@@ -1,5 +1,10 @@
 ## 0.18.0 integration (2026-10-18)
 
+Local verification complete: ten package/entitlement tests passed. The actual
+0.18.0 package passed all provenance and extraction checks, and both signing
+profiles retain the required background permissions. Native CI and signed
+artifact checks remain pending. Integration PR: #9 in txntixnz/reynard-browser.
+
 User asked to include every custom fix with the new official update.
 Base: official 0.18.0, 860bb6f4d0ff2b5d45f7dbe48eca8f39ee88a4fa.
 New branch/workflow: ios16-v018-custom-fixes /
