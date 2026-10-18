@@ -1,3 +1,26 @@
+## Codemagic build launched on free M2 (2026-10-18)
+
+User's no-spending rule is absolute: never buy/pay/subscribe/upgrade, enable paid
+usage, or change billing/spending limits. GitHub Actions remain DISABLED.
+
+Recovered the other chat's manual-only Codemagic configuration, then verified
+live UI state: Reynard had NO recorded builds and was still looking at main,
+where no codemagic.yaml exists. Selected ios16-v018-custom-fixes and its workflow
+"Reynard 0.18.0 + iOS 16 fixes (TrollStore)". No source changes were needed.
+Personal account billing was disabled, no transactions, 23/500 free minutes used.
+The build is on Mac mini M2; SSH/VNC access remains OFF; no auto triggers added.
+
+Actual build created and visibly queued:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ad51ad57550aed8108feab6
+App ID: 6ad4f19e6f273f3d5e2c1ce6
+Build ID: 6ad51ad57550aed8108feab6
+Source commit: 4a91e1634b3cbce50410d11e0ff794a888e65a7f
+Expected artifact: Reynard-TrollStore.tipa (+ SHA-256 file).
+Native regression/build/signature checks were pending at launch; do NOT claim
+success or an artifact until verified. No duplicate builds or whole-run polling.
+Codemagic's official current machine docs confirm Xcode 26.6 on M2; no pin change
+was needed. Sources and all custom fixes remain as the validated integration.
+
 ## 0.18.0 integration (2026-10-18)
 
 Local verification complete: ten package/entitlement tests passed. The actual
