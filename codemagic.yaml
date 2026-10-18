@@ -12,6 +12,9 @@ workflows:
       vars:
         # Required by prepare-prebuilt-gecko.py: compare official release commits to HEAD.
         CM_CLONE_UNSHALLOW: 'true'
+        # Gecko is extracted from the pinned release; do not clone Firefox history.
+        # Initialize only support/idevice explicitly in the script below.
+        CM_RECURSIVE_SUBMODULE_INIT: 'false'
     cache:
       cache_paths:
         - $CM_BUILD_DIR/support/idevice/target
