@@ -10,7 +10,7 @@ import tempfile
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--released-engine", action="store_true", help="Use the untouched checksum-verified 0.17.0 engine, without legacy 0.16 editor fixtures")
+parser.add_argument("--released-engine", action="store_true", help="Use the untouched checksum-verified release engine, without legacy 0.16 editor fixtures")
 args = parser.parse_args()
 ROOT = Path(__file__).resolve().parents[2]
 subprocess.run(["python3", str(ROOT / "tests/stability/test-engine-package.py")], check=True)

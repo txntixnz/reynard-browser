@@ -1,3 +1,106 @@
+## ACTIVE Codemagic build #4 / Rust setup corrected (2026-10-18)
+
+User clarified: only wants Reynard updated to 0.18 with all existing fixes.
+Build #3 (6ad51c987550aed8108feb31) FAILED after 1m41s, before app compilation:
+Homebrew rustup 1.29.1 no longer provides rustup-init (exit127). Full native
+regression suite passed, and official Gecko158 package verified/extracted in4s.
+Fixed codemagic.yaml in 99363e33462514f92b61705ebc71d819b9fd5368: remove
+rustup-init; expose Homebrew's keg-only rustup proxies in PATH in BOTH Rust
+setup and iDevice compilation steps. Use rustup toolchain install/default/target.
+Matches current official Homebrew and rustup documentation. YAML + every shell
+step syntax validated. Engine/app sources and custom fixes unchanged.
+
+ACTIVE build #4, visibly queued on FREE Mac mini M2, source99363e3:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ad51dde7550aed8108feb81
+Build ID: 6ad51dde7550aed8108feb81
+Billing remains disabled. No paid usage or triggers authorized. Do not start
+duplicate builds. Final artifact should be Reynard-TrollStore.tipa (+sha256).
+Build4 results and final signed artifact still pending. Do not claim success.
+
+## Codemagic build #3 / checkout corrected (2026-10-18)
+
+User no-spend rule absolute: never buy/pay/subscribe/upgrade, enable billing or
+paid usage, or alter spending limits. GitHub Actions remain disabled.
+Codemagic personal billing was verified disabled, no transactions, 23/500 free
+M2 minutes used before these runs. Only Mac mini M2, manual-only, max 60m.
+
+Build #1 6ad51ad57550aed8108feab6 was canceled after 4m05s: checkout was
+cloning the entire Firefox history through automatic recursive submodules.
+Build #2 6ad51c0c7550aed8108feb0b was canceled after 55s: the documented
+CM_RECURSIVE_SUBMODULE_INIT=false only removes --recursive but still executes
+`git submodule update --init`, which clones top-level Firefox.
+Neither canceled run reached native tests. Do not restart either old commit.
+
+Final config in 86119ff745cc62aa393586d6f8552c148706abb5 uses Git's documented
+build-local GIT_CONFIG_COUNT=1 / GIT_CONFIG_KEY_0=submodule.engine/firefox.update /
+GIT_CONFIG_VALUE_0=none. No .gitmodules or official engine pin/source changes.
+Validated the exact automatic checkout command against a fresh temporary repo
+and an unreachable Firefox URL: exit 0, "Skipping submodule 'engine/firefox'",
+no Firefox checkout. Explicit support/idevice initialization is retained.
+
+ACTIVE replacement build #3, visibly queued on Mac mini M2:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ad51c987550aed8108feb31
+App ID: 6ad4f19e6f273f3d5e2c1ce6
+Build ID: 6ad51c987550aed8108feb31
+Source: 86119ff745cc62aa393586d6f8552c148706abb5
+Expected artifact: Reynard-TrollStore.tipa plus SHA-256 file.
+Live build #3 confirmed Firefox skipped; checkout finished in 8 seconds.
+Branch/free-host validation passed (1s). The full native regression step passed
+(11s), including session/picker/popup/resume/task-state/diagnostics/download and
+destination filesystem checks plus package/entitlement tests. These are control-
+flow tests with doubles, not proof of iPhone background grants or ChatGPT fixes.
+Packaging-tool installation was running at the last check (~55s total).
+App compilation and final signed-package inspection remain pending.
+No duplicate builds. User prefers to report completion/failure rather than us
+monitoring an entire long build. Official docs confirm Xcode26.6 on M2.
+
+## 0.18.0 integration (2026-10-18)
+
+Local verification complete: ten package/entitlement tests passed. The actual
+0.18.0 package passed all provenance and extraction checks, and both signing
+profiles retain the required background permissions. Native CI and signed
+artifact checks remain pending. Integration PR: #9 in txntixnz/reynard-browser.
+
+User asked to include every custom fix with the new official update.
+Base: official 0.18.0, 860bb6f4d0ff2b5d45f7dbe48eca8f39ee88a4fa.
+New branch/workflow: ios16-v018-custom-fixes /
+iOS 16 - 0.18.0 Custom Fixes.
+Artifact: Reynard-0.18.0-Custom-Fixes-TrollStore / Reynard-TrollStore.tipa.
+
+Merged the complete release into 8b7dd737 without conflicts. Both overlapping
+Swift files retain upstream keyboard/image changes and our guarded focus/repaint
+behavior. All custom picker, popup window, session restoration, finite UIKit
+fallback, explicit host/helper suspension-prevention, download background owner,
+selected download-folder/bookmark, diagnostics, HTTP/3 control and signing checks
+remain. Existing user preferences and app identity are preserved.
+
+Reuse only the SHA-256-verified official 0.18.0 engine package:
+a04054f7e50dba037bb2c0f90d97476a02aa71eb6efee64ca3a14d141f9907e9.
+Gecko is 158.0 / FIREFOX_158_0_RELEASE. Engine and patches must be exactly the
+release. New bridge headers were derived from pinned Firefox source
+3c71aeacdb296402e41fb2084b13e797d1770642 by applying the release's three header
+patches. In particular the new key-command delegate and script annotation are
+required; never compile 0.18 app sources against the old 0.17 headers/binaries.
+The official package version 0.18.0 / build 860bb6f and checksum were verified
+locally. The new workflow builds app/helper targets, not Gecko.
+
+Device results AFTER the previous handoff: diagnostics (5) confirmed 8b7dd73's
+explicit flags and non-suspended host/socket tasks, with successful short returns.
+Diagnostics (6) recorded successful returns with the same host/socket after
+17m54s and 14m25s wall-clock background intervals, but also a new host/socket at
+2026-10-15 00:28:52 Brussels (2026-10-14 22:28:52 UTC). Cause is unknown; the
+matching IPS was requested and has NOT been received. Do not claim restarts fixed.
+Task inspection is a point-in-time observation, not proof ChatGPT kept executing.
+Sidebar infinite loading still reported. HTTP/3 was ON; user was asked to compare
+with it OFF and restart once. No comparison result has been received. Preserve
+the stored selection; do not claim this update fixes service stalls or messages.
+The new release adds scrolling/touch, audio and network-domain changes; their
+on-device effect on these unresolved issues remains to be tested.
+
+Validation and published run are recorded in the integration PR. User reports
+workflow completion/failure; do not monitor an entire build or request a new
+four-hour Gecko compile. Prior 0.17 custom branch remains available.
+
 ## Observer candidate failed; request task suspension prevention directly (2026-10-14)
 
 Latest device attachments, inspected directly from scratch:

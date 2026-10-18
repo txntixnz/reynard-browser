@@ -1,0 +1,86 @@
+# Reynard 0.18.0 / Gecko 158 / iOS 16 / TrollStore
+# Codemagic PERSONAL FREE plan only. Do not enable billing.
+# This workflow uses ONLY the free macOS M2 instance and has NO automatic triggers.
+# Run manually from the ios16-v018-custom-fixes branch.
+workflows:
+  reynard-ios16-018-trollstore:
+    name: Reynard 0.18.0 + iOS 16 fixes (TrollStore)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: '26.6'
+      vars:
+        # Required by prepare-prebuilt-gecko.py: compare official release commits to HEAD.
+        CM_CLONE_UNSHALLOW: 'true'
+        # This flag only skips nested modules, not top-level Firefox itself.
+        CM_RECURSIVE_SUBMODULE_INIT: 'false'
+        # Scope Git's documented skip rule to this build, keeping .gitmodules intact.
+        GIT_CONFIG_COUNT: '1'
+        GIT_CONFIG_KEY_0: 'submodule.engine/firefox.update'
+        GIT_CONFIG_VALUE_0: 'none'
+    cache:
+      cache_paths:
+        - $CM_BUILD_DIR/support/idevice/target
+        - $HOME/.cargo/registry
+        - $HOME/.cargo/git
+    scripts:
+      - name: Verify correct branch and free build host
+        script: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+          if [ "${CM_BRANCH:-}" != 'ios16-v018-custom-fixes' ]; then
+            echo 'Refusing to build a different branch; choose ios16-v018-custom-fixes.' >&2
+            exit 1
+          fi
+          test "$(cat engine/release.txt)" = 'FIREFOX_158_0_RELEASE'
+          xcodebuild -version
+          python3 --version
+          git cat-file -e '860bb6f4d0ff2b5d45f7dbe48eca8f39ee88a4fa^{commit}'
+      - name: Run browser stability and packaging regression tests
+        script: |
+          set -euo pipefail
+          python3 tests/stability/run.py --released-engine
+          python3 tests/stability/run-downloads.py
+          python3 tests/stability/test-background-entitlements.py
+      - name: Install packaging tools only (no Apple signing account)
+        script: |
+          set -euo pipefail
+          if ! command -v ldid >/dev/null 2>&1; then
+            brew install ldid
+          fi
+          python3 -c 'import hashlib; assert hasattr(hashlib, "file_digest")'
+      - name: Verify and extract pinned official Gecko 158 release
+        script: |
+          set -euo pipefail
+          python3 tools/release/prepare-prebuilt-gecko.py --release-018
+      - name: Initialize iDevice support and Rust toolchain
+        script: |
+          set -euo pipefail
+          git submodule update --init --recursive support/idevice
+          export PATH="$HOME/.cargo/bin:$(brew --prefix)/opt/rustup/bin:$PATH"
+          if ! command -v rustup >/dev/null 2>&1; then
+            brew install rustup
+          fi
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-ios
+          rustc --version
+      - name: Build iDevice support library
+        script: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$(brew --prefix)/opt/rustup/bin:$PATH"
+          ./tools/development/build-idevice.sh
+      - name: Compile Reynard app and GeckoView helpers
+        script: |
+          set -euo pipefail
+          ./tools/release/build-app.sh --no-signing
+      - name: Package and locally sign TrollStore TIPA
+        script: |
+          set -euo pipefail
+          ./tools/release/create-ipa.sh --trollstore
+          python3 tools/release/verify-background-entitlements.py dist/Reynard-TrollStore.tipa
+          shasum -a 256 dist/Reynard-TrollStore.tipa > dist/Reynard-TrollStore.tipa.sha256
+    artifacts:
+      - dist/Reynard-TrollStore.tipa
+      - dist/Reynard-TrollStore.tipa.sha256
