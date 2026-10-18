@@ -32,10 +32,12 @@ the existing iOS 16 stability / ChatGPT / download / signing customizations.
 
 ## What the workflow does
 
-Checkout sets `CM_RECURSIVE_SUBMODULE_INIT: 'false'` to avoid downloading the
-entire Firefox repository. The workflow initializes only `support/idevice` in
-its explicit dependency step. Full history of this small app repository is
-retained for the release-provenance checks.
+Checkout applies Git's `submodule.engine/firefox.update=none` through build-local
+`GIT_CONFIG_COUNT` / key / value variables. This skips Firefox entirely while
+preserving `.gitmodules` and the official engine source pins. The separate
+`CM_RECURSIVE_SUBMODULE_INIT: 'false'` flag only disables nested modules; it does
+not by itself skip Firefox. The workflow initializes `support/idevice` explicitly.
+Full history of this small app repository is retained for provenance checks.
 
 1. Checks that the selected branch is exactly `ios16-v018-custom-fixes` and
    that the tree carries `FIREFOX_158_0_RELEASE`.
