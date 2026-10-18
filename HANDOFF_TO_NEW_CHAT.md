@@ -1,3 +1,20 @@
+## Codemagic checkout corrected (2026-10-18)
+
+Build #1 (6ad51ad57550aed8108feab6) was canceled at 4m05s after its visible
+checkout log showed an automatic `git submodule update --init --recursive`
+cloning the entire Firefox source. No native tests ran in that canceled build.
+Official Codemagic docs confirm `CM_RECURSIVE_SUBMODULE_INIT: 'false'` disables
+that checkout behavior. Added it in fd5571c4eb59bb473b859bab8af21fe09fe094cc.
+Only support/idevice is initialized explicitly by our existing build step.
+YAML validation passed; manual-only M2 / 60-minute limit / no billing preserved.
+
+Replacement build #2 is visibly queued on Mac mini M2 at source fd5571c:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ad51c0c7550aed8108feb0b
+Build ID: 6ad51c0c7550aed8108feb0b
+Expected artifact: Reynard-TrollStore.tipa and its SHA-256 file.
+Native regression, compilation and signed-package checks remain pending.
+Do not restart the old commit or run duplicate builds.
+
 ## Codemagic build launched on free M2 (2026-10-18)
 
 User's no-spending rule is absolute: never buy/pay/subscribe/upgrade, enable paid
