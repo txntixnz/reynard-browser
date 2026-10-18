@@ -1,42 +1,33 @@
-## Codemagic checkout corrected (2026-10-18)
+## Codemagic build #3 / checkout corrected (2026-10-18)
 
-Build #1 (6ad51ad57550aed8108feab6) was canceled at 4m05s after its visible
-checkout log showed an automatic `git submodule update --init --recursive`
-cloning the entire Firefox source. No native tests ran in that canceled build.
-Official Codemagic docs confirm `CM_RECURSIVE_SUBMODULE_INIT: 'false'` disables
-that checkout behavior. Added it in fd5571c4eb59bb473b859bab8af21fe09fe094cc.
-Only support/idevice is initialized explicitly by our existing build step.
-YAML validation passed; manual-only M2 / 60-minute limit / no billing preserved.
+User no-spend rule absolute: never buy/pay/subscribe/upgrade, enable billing or
+paid usage, or alter spending limits. GitHub Actions remain disabled.
+Codemagic personal billing was verified disabled, no transactions, 23/500 free
+M2 minutes used before these runs. Only Mac mini M2, manual-only, max 60m.
 
-Replacement build #2 is visibly queued on Mac mini M2 at source fd5571c:
-https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ad51c0c7550aed8108feb0b
-Build ID: 6ad51c0c7550aed8108feb0b
-Expected artifact: Reynard-TrollStore.tipa and its SHA-256 file.
-Native regression, compilation and signed-package checks remain pending.
-Do not restart the old commit or run duplicate builds.
+Build #1 6ad51ad57550aed8108feab6 was canceled after 4m05s: checkout was
+cloning the entire Firefox history through automatic recursive submodules.
+Build #2 6ad51c0c7550aed8108feb0b was canceled after 55s: the documented
+CM_RECURSIVE_SUBMODULE_INIT=false only removes --recursive but still executes
+`git submodule update --init`, which clones top-level Firefox.
+Neither canceled run reached native tests. Do not restart either old commit.
 
-## Codemagic build launched on free M2 (2026-10-18)
+Final config in 86119ff745cc62aa393586d6f8552c148706abb5 uses Git's documented
+build-local GIT_CONFIG_COUNT=1 / GIT_CONFIG_KEY_0=submodule.engine/firefox.update /
+GIT_CONFIG_VALUE_0=none. No .gitmodules or official engine pin/source changes.
+Validated the exact automatic checkout command against a fresh temporary repo
+and an unreachable Firefox URL: exit 0, "Skipping submodule 'engine/firefox'",
+no Firefox checkout. Explicit support/idevice initialization is retained.
 
-User's no-spending rule is absolute: never buy/pay/subscribe/upgrade, enable paid
-usage, or change billing/spending limits. GitHub Actions remain DISABLED.
-
-Recovered the other chat's manual-only Codemagic configuration, then verified
-live UI state: Reynard had NO recorded builds and was still looking at main,
-where no codemagic.yaml exists. Selected ios16-v018-custom-fixes and its workflow
-"Reynard 0.18.0 + iOS 16 fixes (TrollStore)". No source changes were needed.
-Personal account billing was disabled, no transactions, 23/500 free minutes used.
-The build is on Mac mini M2; SSH/VNC access remains OFF; no auto triggers added.
-
-Actual build created and visibly queued:
-https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ad51ad57550aed8108feab6
+ACTIVE replacement build #3, visibly queued on Mac mini M2:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ad51c987550aed8108feb31
 App ID: 6ad4f19e6f273f3d5e2c1ce6
-Build ID: 6ad51ad57550aed8108feab6
-Source commit: 4a91e1634b3cbce50410d11e0ff794a888e65a7f
-Expected artifact: Reynard-TrollStore.tipa (+ SHA-256 file).
-Native regression/build/signature checks were pending at launch; do NOT claim
-success or an artifact until verified. No duplicate builds or whole-run polling.
-Codemagic's official current machine docs confirm Xcode 26.6 on M2; no pin change
-was needed. Sources and all custom fixes remain as the validated integration.
+Build ID: 6ad51c987550aed8108feb31
+Source: 86119ff745cc62aa393586d6f8552c148706abb5
+Expected artifact: Reynard-TrollStore.tipa plus SHA-256 file.
+Native regression, app compilation and signed-package inspection remain pending.
+No duplicate builds. User prefers to report completion/failure rather than us
+monitoring an entire long build. Official docs confirm Xcode26.6 on M2.
 
 ## 0.18.0 integration (2026-10-18)
 
