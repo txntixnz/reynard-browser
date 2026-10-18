@@ -1,3 +1,22 @@
+## ACTIVE Codemagic build #4 / Rust setup corrected (2026-10-18)
+
+User clarified: only wants Reynard updated to 0.18 with all existing fixes.
+Build #3 (6ad51c987550aed8108feb31) FAILED after 1m41s, before app compilation:
+Homebrew rustup 1.29.1 no longer provides rustup-init (exit127). Full native
+regression suite passed, and official Gecko158 package verified/extracted in4s.
+Fixed codemagic.yaml in 99363e33462514f92b61705ebc71d819b9fd5368: remove
+rustup-init; expose Homebrew's keg-only rustup proxies in PATH in BOTH Rust
+setup and iDevice compilation steps. Use rustup toolchain install/default/target.
+Matches current official Homebrew and rustup documentation. YAML + every shell
+step syntax validated. Engine/app sources and custom fixes unchanged.
+
+ACTIVE build #4, visibly queued on FREE Mac mini M2, source99363e3:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ad51dde7550aed8108feb81
+Build ID: 6ad51dde7550aed8108feb81
+Billing remains disabled. No paid usage or triggers authorized. Do not start
+duplicate builds. Final artifact should be Reynard-TrollStore.tipa (+sha256).
+Build4 results and final signed artifact still pending. Do not claim success.
+
 ## Codemagic build #3 / checkout corrected (2026-10-18)
 
 User no-spend rule absolute: never buy/pay/subscribe/upgrade, enable billing or
