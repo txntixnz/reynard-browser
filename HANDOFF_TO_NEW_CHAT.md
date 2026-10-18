@@ -25,7 +25,13 @@ App ID: 6ad4f19e6f273f3d5e2c1ce6
 Build ID: 6ad51c987550aed8108feb31
 Source: 86119ff745cc62aa393586d6f8552c148706abb5
 Expected artifact: Reynard-TrollStore.tipa plus SHA-256 file.
-Native regression, app compilation and signed-package inspection remain pending.
+Live build #3 confirmed Firefox skipped; checkout finished in 8 seconds.
+Branch/free-host validation passed (1s). The full native regression step passed
+(11s), including session/picker/popup/resume/task-state/diagnostics/download and
+destination filesystem checks plus package/entitlement tests. These are control-
+flow tests with doubles, not proof of iPhone background grants or ChatGPT fixes.
+Packaging-tool installation was running at the last check (~55s total).
+App compilation and final signed-package inspection remain pending.
 No duplicate builds. User prefers to report completion/failure rather than us
 monitoring an entire long build. Official docs confirm Xcode26.6 on M2.
 
