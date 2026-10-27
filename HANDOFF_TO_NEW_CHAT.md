@@ -1,3 +1,43 @@
+## Reynard 0.19.0 update (2026-10-27)
+
+CURRENT integration branch: ios16-v019-custom-fixes, commit
+ebbd924749e5754ee7d64f05b25c6302883a2d4f.
+PR #10: https://github.com/txntixnz/reynard-browser/pull/10
+Complete official 0.19.0 commit24a99b717ca82aa8ac9777123692a653cc8bf4ee merged
+with custom0.18 branch4bbe1758. Gecko158.0.1. Exact engine/patches upstream.
+Pinned official TIPA SHA2566076628afff639c24a9c7cd290108d9fbc3014f493bc74c7692b22eb3f418866.
+Three bridge headers rederived from Firefox9378fbc58660847fbc02c3486a0ecd6049978e25
+plus official IOSBootstrap/SwiftSupport/RuntimeSupport patches; new error APIs.
+
+All custom-only app/runtime/helper files retained byte-for-byte. Four upstream/
+custom overlaps reviewed: GeckoSession, BrowserViewController, TabManagerImpl,
+SceneDelegate. Restore lifecycle hook removed upstream so ChatGPT background
+window still starts. Restore delayed-termination selection recovery, combining
+with0.19 explicit recoverAutomatically; retain new crash error-page state.
+All prior picker, popup, restoration, task-execution, diagnostics, HTTP3 setting,
+download background and user-selected destination/signing fixes remain.
+
+LOCAL: six engine package and five entitlement tests passed; YAML/all shell
+steps valid. Actual official0.19 TIPA checksum/version24a99b7/libraries/resources
+and prepare-prebuilt extraction passed before scratch maintenance. Linux lacks
+swiftc/clang++; native suite and full app build pending new Codemagic run.
+
+USER CLARIFIED October27 attached scene-update watchdog report came from OUR
+custom build. Treat timeouts/restarts as unresolved. No unsupported promise of
+fix. Report shows background scene update exceeded10sec (0x8badf00d), memory
+pressure false; main thread waits in an unsymbolicated UIKit/system stack. Host
+has suspendCount1 in the final stackshot and helpers0; cannot infer pre-timeout
+execution from post-kill sampling. Raw report was read locally, not committed.
+
+Previous Codemagic0.18 build#4 6ad51dde7550aed8108feb81 confirmed SUCCEEDED in
+7m58s; native tests/app/signed-package check passed. Actual 0.19 still pending.
+Billing verified DISABLED, 371/500 free M2minutes used (129remaining); no prior
+transactions. NEVER buy/pay/subscribe/upgrade/enable billing/change limits.
+GitHubActions remain disabled. Codemagic manual M2 only/max60min. Preserve all.
+Codemagic modal sees new branch but workflow temporarily says not found despite
+raw GitHub codemagic.yaml verified available; branch metadata refresh pending.
+Do not start duplicate/old0.18 build. Finish selecting0.19 workflow first.
+
 ## ACTIVE Codemagic build #4 / Rust setup corrected (2026-10-18)
 
 User clarified: only wants Reynard updated to 0.18 with all existing fixes.
