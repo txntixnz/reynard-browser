@@ -34,9 +34,15 @@ Previous Codemagic0.18 build#4 6ad51dde7550aed8108feb81 confirmed SUCCEEDED in
 Billing verified DISABLED, 371/500 free M2minutes used (129remaining); no prior
 transactions. NEVER buy/pay/subscribe/upgrade/enable billing/change limits.
 GitHubActions remain disabled. Codemagic manual M2 only/max60min. Preserve all.
-Codemagic modal sees new branch but workflow temporarily says not found despite
-raw GitHub codemagic.yaml verified available; branch metadata refresh pending.
-Do not start duplicate/old0.18 build. Finish selecting0.19 workflow first.
+Resolved workflow discovery by opening app settings, selecting0.19 branch and
+fetching configuration there. Correct workflow visibly selected and started.
+ACTIVE 0.19 build#1 source d81e424ac53b5d45d34446844c324474c901a7bf:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ae0392a4a72334e32e5984b
+BuildID6ae0392a4a72334e32e5984b. Confirmed free Mac mini M2 /correct branch.
+Live results: checkout6s, native regression suite PASS9s (Swift+ObjC task,
+resume/picker/popup, diagnostics, download and filesystem checks), official158.0.1
+engine verification/extraction PASS3s. Rust setup running at~1m13s total.
+App compilation and signed-package check pending. No duplicate builds.
 
 ## ACTIVE Codemagic build #4 / Rust setup corrected (2026-10-18)
 
