@@ -58,8 +58,13 @@ branch remain intact.
 
 ## Caveats and next tests
 
-- Source configuration has been validated locally, **but an actual Codemagic
-  macOS build and signed-artifact inspection have not yet run**.
+- Codemagic build #2 succeeded on the free M2 machine in 6m44s:
+  https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ae03afb4a72334e32e598b7
+  Source `7ad03f1`; app version `0.19.0`, minimum iOS `13.0`.
+  Native regressions, full app/helper compilation and signed-package checks passed.
+  The downloaded TIPA matches the published checksum; its actual embedded host
+  and helper entitlements were inspected independently.
+  SHA-256: `7af14ac9a341fd0b48ede12f0f3602da0ea4e4b11eb33c23a2868d0a9f5386e2`.
 - The free tier is finite. If Codemagic reports that the free minutes have
   expired, **stop** and wait for the free quota reset or use a different
   genuinely free build route. Never authorize a charge.
