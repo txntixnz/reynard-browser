@@ -144,9 +144,6 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
     
     deinit {
         stopScreenOrientationHandling()
-        if isShowingFullscreenMedia {
-            UIApplication.shared.isIdleTimerDisabled = false
-        }
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -332,6 +329,9 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
         }
         contentView.onHistorySwipeBegan = { [weak self] in
             self?.captureOutgoingHistoryThumbnail()
+        }
+        contentView.onErrorAction = { [weak self] action in
+            self?.performErrorPageAction(action)
         }
         browserChrome.onSidebar = { [weak self] in
             self?.sidebarCoordinator.toggle(animated: true)
@@ -987,10 +987,10 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
               source.isDescendant(of: engineView) else {
             return
         }
-
+        
         requestContentKeyboardFocus(for: session)
     }
-
+    
     @objc private func keyboardFrameWillChange(_ notification: Notification) {
         guard let frameValue = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else {
             return
@@ -1119,7 +1119,7 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
         )
     }
     
-    func applyFullscreenState(_ fullScreen: Bool, for session: GeckoSession?, mediaIsPlaying: Bool) {
+    func applyFullscreenState(_ fullScreen: Bool, for session: GeckoSession?) {
         if fullScreen {
             fullscreenSession = session
         } else if fullscreenSession === session || session == nil {
@@ -1141,7 +1141,6 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
         sidebarCoordinator.setFullscreen(fullScreen)
         isShowingFullscreenMedia = fullScreen
         updateBrowserLayout(animated: false)
-        UIApplication.shared.isIdleTimerDisabled = fullScreen && mediaIsPlaying
         updateFullscreenOrientation(fullScreen)
         requestContentKeyboardFocus(for: tabManager.selectedTab?.session)
     }
@@ -1152,7 +1151,7 @@ final class BrowserViewController: UIViewController, GeckoScreenOrientationDeleg
             return
         }
         session.exitFullScreen()
-        applyFullscreenState(false, for: session, mediaIsPlaying: false)
+        applyFullscreenState(false, for: session)
     }
     
     // MARK: - Orientation

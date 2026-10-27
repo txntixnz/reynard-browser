@@ -42,7 +42,7 @@ extension BrowserViewController: TabManagerDelegate {
         }
         
         toolbarController.reset()
-        contentView.showPageError(for: tab.url)
+        contentView.updateLoadError(for: tab)
         captureThumbnail(
             forTabAt: tabManager.selectedTabIndex,
             mode: tabManager.selectedTabMode
@@ -92,7 +92,7 @@ extension BrowserViewController: TabManagerDelegate {
         
         if isShowingFullscreenMedia,
            fullscreenSession !== selectedTab.session {
-            applyFullscreenState(false, for: fullscreenSession, mediaIsPlaying: false)
+            applyFullscreenState(false, for: fullscreenSession)
         }
         
         requestHomepageAddressBarFocus()
@@ -154,19 +154,11 @@ extension BrowserViewController: TabManagerDelegate {
         contextMenuCoordinator.present(at: point, target: .link(url), allowsPreview: !element.isMouseInput)
     }
     
-    func tabManager(_ tabManager: TabManager, didChangeFullscreen fullScreen: Bool, mediaIsPlaying: Bool, for session: GeckoSession) {
+    func tabManager(_ tabManager: TabManager, didChangeFullscreen fullScreen: Bool, for session: GeckoSession) {
         guard tabManager.selectedTab?.session === session else {
             return
         }
-        applyFullscreenState(fullScreen, for: session, mediaIsPlaying: mediaIsPlaying)
-    }
-    
-    func tabManager(_ tabManager: TabManager, didChangeMediaPlayback isPlaying: Bool, for session: GeckoSession) {
-        guard isShowingFullscreenMedia,
-              fullscreenSession === session else {
-            return
-        }
-        UIApplication.shared.isIdleTimerDisabled = isPlaying
+        applyFullscreenState(fullScreen, for: session)
     }
     
     func tabManager(_ tabManager: TabManager, didUpdateTabAt index: Int, reason: TabManagerUpdateReason) {
@@ -207,6 +199,15 @@ extension BrowserViewController: TabManagerDelegate {
         case .navigationState:
             if index == tabManager.selectedTabIndex {
                 updateNavigationButtons()
+                contentView.updateLoadError(for: tab)
+            }
+            
+        case .loadError:
+            if index == tabManager.selectedTabIndex {
+                contentView.updateLoadError(for: tab)
+                refreshAddressBar()
+                homepageOverlayCoordinator.updatePresentation(animated: false)
+                toolbarController.reset()
             }
             
         case .loading:
@@ -217,6 +218,7 @@ extension BrowserViewController: TabManagerDelegate {
                 )
                 
                 if tab.state.loadingState.isLoading {
+                    contentView.updateLoadError(for: tab)
                     contentView.resetScrollTracking()
                     toolbarController.lock(for: .pageNavigation)
                 } else {

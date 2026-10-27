@@ -1,7 +1,7 @@
-# Reynard 0.18.0 custom iOS 16 build — Codemagic free plan
+# Reynard 0.19.0 custom iOS 16 build — Codemagic free plan
 
 This is a **manual-only** alternative to disabled GitHub Actions for
-`ios16-v018-custom-fixes`, carrying official Reynard 0.18.0, Gecko 158 and
+`ios16-v019-custom-fixes`, carrying official Reynard 0.19.0, Gecko 158.0.1 and
 the existing iOS 16 stability / ChatGPT / download / signing customizations.
 
 ## Strict zero-spend policy
@@ -21,8 +21,8 @@ the existing iOS 16 stability / ChatGPT / download / signing customizations.
    account. Authorize access to `txntixnz/reynard-browser` when asked.
 2. Add `txntixnz/reynard-browser` as a Codemagic application.
 3. In Codemagic select **Start new build**; choose branch
-   `ios16-v018-custom-fixes`, configuration **codemagic.yaml**, workflow
-   **Reynard 0.18.0 + iOS 16 fixes (TrollStore)**.
+   `ios16-v019-custom-fixes`, configuration **codemagic.yaml**, workflow
+   **Reynard 0.19.0 + iOS 16 fixes (TrollStore)**.
 4. Verify the build machine shows **mac_mini_m2** (free M2).
 5. Click **Start new build** once. Do not enable automatic triggers or billing.
 6. If successful, open the build's **Artifacts**, and download
@@ -39,11 +39,11 @@ preserving `.gitmodules` and the official engine source pins. The separate
 not by itself skip Firefox. The workflow initializes `support/idevice` explicitly.
 Full history of this small app repository is retained for provenance checks.
 
-1. Checks that the selected branch is exactly `ios16-v018-custom-fixes` and
+1. Checks that the selected branch is exactly `ios16-v019-custom-fixes` and
    that the tree carries `FIREFOX_158_0_RELEASE`.
 2. Runs the same stability, picker, download and background-entitlement
    regression tests as the GitHub workflow.
-3. Downloads the **official upstream 0.18.0 TIPA** and rejects it if its fixed
+3. Downloads the **official upstream 0.19.0 TIPA** and rejects it if its fixed
    SHA-256 / version / build / engine-library checks fail. No Gecko recompile.
 4. Builds the existing Rust idevice support and native iOS app/helper.
 5. Packages the same `Reynard-TrollStore.tipa` via existing `ldid` signing.
@@ -52,7 +52,7 @@ Full history of this small app repository is retained for provenance checks.
 7. Publishes the TIPA and checksum as downloadable build artifacts.
 
 The official engine/package pin is defined in
-`tools/release/prepare-prebuilt-gecko.py --release-018` and has **not** been
+`tools/release/prepare-prebuilt-gecko.py --release-019` and has **not** been
 modified by this Codemagic integration. The original GitHub workflow and its
 branch remain intact.
 
