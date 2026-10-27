@@ -51,6 +51,16 @@ with tempfile.TemporaryDirectory(prefix="reynard-stability-") as tmp:
     swift_file = Path(tmp) / "main.swift"
     swift_file.write_text(source)
     binary = Path(tmp) / "regression"
+    if (ROOT / "browser/GeckoView/Support/WebRequestErrorBridge.mm").exists():
+        subprocess.run([
+            "clang++", "-std=c++17", "-fobjc-arc", "-framework", "Foundation",
+            "-I", str(ROOT / "tools/prebuilt-gecko-headers-019"),
+            "-I", str(ROOT / "browser/GeckoView/Support"),
+            str(ROOT / "browser/GeckoView/Support/WebRequestErrorBridge.mm"),
+            str(ROOT / "tests/stability/WebRequestErrorRegression.mm"),
+            "-o", str(binary),
+        ], check=True)
+        subprocess.run([str(binary)], check=True)
     subprocess.run(["swiftc", "-swift-version", "5", str(swift_file), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 
