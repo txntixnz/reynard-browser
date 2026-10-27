@@ -10,7 +10,12 @@ enum SessionNavigationAvailability { case unavailable }
 enum TabRestoreState: Equatable { case none, pendingSession, pendingURL(String) }
 enum TabDisplayState { case committed, pending(String) }
 enum TabLoadingState { case idle, loading(progress: Float) }
-enum TabManagerUpdateReason { case loading }
+enum TabManagerUpdateReason { case loading, loadError }
+struct WebRequestError {
+    enum Kind { case contentCrashed }
+    let kind: Kind
+    let uri: String?
+}
 
 final class DownloadStore {
     static let shared = DownloadStore()
@@ -43,6 +48,7 @@ final class TabSessionState {
     var restoreState: TabRestoreState = .none
     var tabSessionState: GeckoSessionState?
     var loadingState = TabLoadingState.idle
+    var loadError: WebRequestError?
     var suppressInitialNavigation = true
     var showsStartupHomepage = false
     var sessionNavigationAvailability = SessionNavigationAvailability.unavailable
@@ -126,7 +132,7 @@ final class TabManagerImplementation {
     }
     func prepareForRecovery(_ tab: Tab) { prepareRestoration(for: tab) }
     func recover() { recoverSelectedSessionIfNeeded() }
-    func terminate(_ session: GeckoSession) { handleSessionTermination(session) }
+    func terminate(_ session: GeckoSession, recoverAutomatically: Bool = false) { handleSessionTermination(session, recoverAutomatically: recoverAutomatically) }
 }
 
 func snapshot(_ url: String, draft: String = "unsent draft") -> GeckoSessionState {
@@ -241,6 +247,17 @@ check(crashTab.state.tabSessionState!.serializedString()!.contains("unsent draft
 check(crashManager.delegate!.terminations == 1, "foreground crashes still show the normal page error")
 crashManager.applicationDidBecomeActive()
 check(crashTab.session.restores.count == 1, "foreground recovery restores saved form state after a blank crash")
+
+check(crashTab.state.loadError?.kind == .contentCrashed, "0.19 crash error state remains available alongside saved draft recovery")
+
+let killedManager = TabManagerImplementation()
+let killedTab = killedManager.prepare(current, url: conversation)
+killedManager.selectedTab = killedTab
+let killedSession = killedTab.session
+killedSession.opened = true
+killedManager.terminate(killedSession, recoverAutomatically: true)
+check(killedTab.session !== killedSession && killedTab.session.active, "0.19 engine kill requests restore an active replacement")
+check(killedManager.delegate!.terminations == 0, "automatic engine kill recovery avoids a foreground crash prompt")
 
 let delayedManager = TabManagerImplementation()
 let delayedTab = delayedManager.prepare(current, url: conversation)

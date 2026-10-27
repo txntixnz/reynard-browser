@@ -1,3 +1,102 @@
+## COMPLETE: Reynard 0.19.0 with custom fixes (2026-10-27)
+
+Latest source build7ad03f13c45d3e37c4c8f2f3ff3671d5a76403e8 on branch
+ ios16-v019-custom-fixes, PR10. Full free Mac mini M2 Codemagic build#2 SUCCEEDED
+in6m44s. No purchase, billing change or GitHubActions enablement.
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ae03afb4a72334e32e598b7
+
+PASS: branch/free-host validation; native Swift/ObjC++ regression suite including
+ACTUAL WebRequestErrorBridge mapped27codes/security/unknown tests; official
+Gecko158.0.1 checksum/provenance/extraction; Rust library; full iOS app/helper
+compile; TrollStore signing; actual signed-host/helper background permissions.
+Seven local package + five entitlement tests also passed.
+
+Artifact downloaded from build2, published SHA256 matched. ZIP CRC, actual app
+Info.plist0.19.0/build7ad03f1/minimumiOS13.0 and unchanged bundle identifier
+com.minh-ton.Reynard verified locally. Embedded Mach-O signature entitlements
+also independently parsed: both host/helper have runningboard.assertions.webkit;
+host retains unlimitedassertions and systemappassertions.
+Final TIPA SHA2567af14ac9a341fd0b48ede12f0f3602da0ea4e4b11eb33c23a2868d0a9f5386e2.
+User installer: Reynard-0.19.0-Custom-Fixes-TrollStore.tipa, saved for delivery.
+Install over current app with TrollStore, preserving data. No duplicate build.
+
+All custom-only27 app/runtime/helper files retained exactly; four overlapping
+upstream files integrated, retaining ChatGPT background hook and delayed crash
+recovery plus0.19 error handling. Engine/patches exactly0.19 upstream. Correct
+new bridge/error headers derived from pinned source, no old ABI substitution.
+
+ON-DEVICE validation still pending. The user confirmed October27 background
+scene-update watchdog came from OUR build; timeout/restart cause unresolved.
+Do not claim0.19 update, CI success or background entitlements prove this fixed.
+Report already inspected; no need to ask the user to resend it automatically.
+Older build/checkpoint notes below are historical; this section is current.
+
+## ACTIVE 0.19 build#2 / error-bridge header fix (2026-10-27)
+
+First0.19 build6ae0392a4a72334e32e5984b FAILED after3m21s at app compile:
+WebRequestErrorBridge.mm imported nsError.h, absent from our slim prebuilt
+headers. Native suite/verified engine/Rust library all passed first.
+Fix7ad03f13c45d3e37c4c8f2f3ff3671d5a76403e8 adds UNMODIFIED pinned Firefox
+xpcom/base/nsError.h, mfbt/Likely.h and ErrorList.py; generates ErrorList.h via
+error_list_h(output), no extra modules. Does not change engine/patches/binaries
+or actual upstream bridge. Native suite now compiles/runs ACTUAL bridge with27
+load-code cases, security classes and unknown fallback before full app build.
+7 package tests+5 entitlement tests pass locally; generated header reproduced;
+C++17 header smoke compile+module/error helper execution pass. No local macSDK.
+
+ACTIVE free Mac mini M2 build#2 source7ad03f1:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ae03afb4a72334e32e598b7
+BuildID6ae03afb4a72334e32e598b7. Correct0.19 workflow/branch visibly confirmed.
+Build results and final TIPA pending. Do not claim full success. No duplicate
+builds. Billing disabled, no spending ever authorized. Older run is failed.
+PR10 is the current update PR. No raw phone logs committed.
+
+## Reynard 0.19.0 update (2026-10-27)
+
+CURRENT integration branch: ios16-v019-custom-fixes, commit
+ebbd924749e5754ee7d64f05b25c6302883a2d4f.
+PR #10: https://github.com/txntixnz/reynard-browser/pull/10
+Complete official 0.19.0 commit24a99b717ca82aa8ac9777123692a653cc8bf4ee merged
+with custom0.18 branch4bbe1758. Gecko158.0.1. Exact engine/patches upstream.
+Pinned official TIPA SHA2566076628afff639c24a9c7cd290108d9fbc3014f493bc74c7692b22eb3f418866.
+Three bridge headers rederived from Firefox9378fbc58660847fbc02c3486a0ecd6049978e25
+plus official IOSBootstrap/SwiftSupport/RuntimeSupport patches; new error APIs.
+
+All custom-only app/runtime/helper files retained byte-for-byte. Four upstream/
+custom overlaps reviewed: GeckoSession, BrowserViewController, TabManagerImpl,
+SceneDelegate. Restore lifecycle hook removed upstream so ChatGPT background
+window still starts. Restore delayed-termination selection recovery, combining
+with0.19 explicit recoverAutomatically; retain new crash error-page state.
+All prior picker, popup, restoration, task-execution, diagnostics, HTTP3 setting,
+download background and user-selected destination/signing fixes remain.
+
+LOCAL: six engine package and five entitlement tests passed; YAML/all shell
+steps valid. Actual official0.19 TIPA checksum/version24a99b7/libraries/resources
+and prepare-prebuilt extraction passed before scratch maintenance. Linux lacks
+swiftc/clang++; native suite and full app build pending new Codemagic run.
+
+USER CLARIFIED October27 attached scene-update watchdog report came from OUR
+custom build. Treat timeouts/restarts as unresolved. No unsupported promise of
+fix. Report shows background scene update exceeded10sec (0x8badf00d), memory
+pressure false; main thread waits in an unsymbolicated UIKit/system stack. Host
+has suspendCount1 in the final stackshot and helpers0; cannot infer pre-timeout
+execution from post-kill sampling. Raw report was read locally, not committed.
+
+Previous Codemagic0.18 build#4 6ad51dde7550aed8108feb81 confirmed SUCCEEDED in
+7m58s; native tests/app/signed-package check passed. Actual 0.19 still pending.
+Billing verified DISABLED, 371/500 free M2minutes used (129remaining); no prior
+transactions. NEVER buy/pay/subscribe/upgrade/enable billing/change limits.
+GitHubActions remain disabled. Codemagic manual M2 only/max60min. Preserve all.
+Resolved workflow discovery by opening app settings, selecting0.19 branch and
+fetching configuration there. Correct workflow visibly selected and started.
+ACTIVE 0.19 build#1 source d81e424ac53b5d45d34446844c324474c901a7bf:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ae0392a4a72334e32e5984b
+BuildID6ae0392a4a72334e32e5984b. Confirmed free Mac mini M2 /correct branch.
+Live results: checkout6s, native regression suite PASS9s (Swift+ObjC task,
+resume/picker/popup, diagnostics, download and filesystem checks), official158.0.1
+engine verification/extraction PASS3s. Rust setup running at~1m13s total.
+App compilation and signed-package check pending. No duplicate builds.
+
 ## ACTIVE Codemagic build #4 / Rust setup corrected (2026-10-18)
 
 User clarified: only wants Reynard updated to 0.18 with all existing fixes.

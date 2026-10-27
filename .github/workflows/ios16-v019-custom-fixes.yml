@@ -1,0 +1,65 @@
+name: iOS 16 - 0.19.0 Custom Fixes
+
+on:
+  push:
+    branches: [ios16-v019-custom-fixes]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios16-v019-custom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build 0.19.0 with custom stability and download fixes
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.6'
+      - name: Run browser, task-execution, resume, picker and download regressions
+        run: |
+          python3 tests/stability/run.py --released-engine
+          python3 tests/stability/run-downloads.py
+          python3 tests/stability/test-background-entitlements.py
+      - name: Install packaging dependencies
+        run: brew install ldid python@3.12
+      - name: Prepare unchanged verified 0.19.0 Gecko 158.0.1 engine
+        run: '"$(brew --prefix python@3.12)/bin/python3.12" tools/release/prepare-prebuilt-gecko.py --release-019'
+      - name: Initialize idevice support
+        run: git submodule update --init --recursive support/idevice
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - name: Hash Rust toolchain
+        id: rust_toolchain
+        run: echo "hash=$(rustc -Vv | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Restore idevice build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            support/idevice/target
+            browser/Reynard/JIT/RPPairing/libidevice_ffi.a
+          key: buildcache-idevice-${{ steps.rust_toolchain.outputs.hash }}-${{ hashFiles('support/idevice/Cargo.lock', 'support/idevice/Cargo.toml', 'tools/development/build-idevice.sh') }}
+          restore-keys: |
+            buildcache-idevice-${{ steps.rust_toolchain.outputs.hash }}-
+      - name: Build idevice support library
+        run: ./tools/development/build-idevice.sh
+      - name: Build browser, GeckoView and helper extensions
+        run: ./tools/release/build-app.sh --no-signing
+      - name: Package TrollStore TIPA
+        run: ./tools/release/create-ipa.sh --trollstore
+      - name: Verify permissions in the actual signed host and helper
+        run: python3 tools/release/verify-background-entitlements.py dist/Reynard-TrollStore.tipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Reynard-0.19.0-Custom-Fixes-TrollStore
+          path: dist/Reynard-TrollStore.tipa
+          if-no-files-found: error
