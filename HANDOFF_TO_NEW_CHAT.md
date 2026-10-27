@@ -1,3 +1,23 @@
+## ACTIVE 0.19 build#2 / error-bridge header fix (2026-10-27)
+
+First0.19 build6ae0392a4a72334e32e5984b FAILED after3m21s at app compile:
+WebRequestErrorBridge.mm imported nsError.h, absent from our slim prebuilt
+headers. Native suite/verified engine/Rust library all passed first.
+Fix7ad03f13c45d3e37c4c8f2f3ff3671d5a76403e8 adds UNMODIFIED pinned Firefox
+xpcom/base/nsError.h, mfbt/Likely.h and ErrorList.py; generates ErrorList.h via
+error_list_h(output), no extra modules. Does not change engine/patches/binaries
+or actual upstream bridge. Native suite now compiles/runs ACTUAL bridge with27
+load-code cases, security classes and unknown fallback before full app build.
+7 package tests+5 entitlement tests pass locally; generated header reproduced;
+C++17 header smoke compile+module/error helper execution pass. No local macSDK.
+
+ACTIVE free Mac mini M2 build#2 source7ad03f1:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ae03afb4a72334e32e598b7
+BuildID6ae03afb4a72334e32e598b7. Correct0.19 workflow/branch visibly confirmed.
+Build results and final TIPA pending. Do not claim full success. No duplicate
+builds. Billing disabled, no spending ever authorized. Older run is failed.
+PR10 is the current update PR. No raw phone logs committed.
+
 ## Reynard 0.19.0 update (2026-10-27)
 
 CURRENT integration branch: ios16-v019-custom-fixes, commit
