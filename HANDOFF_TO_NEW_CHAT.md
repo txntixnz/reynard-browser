@@ -1,3 +1,36 @@
+## COMPLETE: Reynard 0.19.0 with custom fixes (2026-10-27)
+
+Latest source build7ad03f13c45d3e37c4c8f2f3ff3671d5a76403e8 on branch
+ ios16-v019-custom-fixes, PR10. Full free Mac mini M2 Codemagic build#2 SUCCEEDED
+in6m44s. No purchase, billing change or GitHubActions enablement.
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6ae03afb4a72334e32e598b7
+
+PASS: branch/free-host validation; native Swift/ObjC++ regression suite including
+ACTUAL WebRequestErrorBridge mapped27codes/security/unknown tests; official
+Gecko158.0.1 checksum/provenance/extraction; Rust library; full iOS app/helper
+compile; TrollStore signing; actual signed-host/helper background permissions.
+Seven local package + five entitlement tests also passed.
+
+Artifact downloaded from build2, published SHA256 matched. ZIP CRC, actual app
+Info.plist0.19.0/build7ad03f1/minimumiOS13.0 and unchanged bundle identifier
+com.minh-ton.Reynard verified locally. Embedded Mach-O signature entitlements
+also independently parsed: both host/helper have runningboard.assertions.webkit;
+host retains unlimitedassertions and systemappassertions.
+Final TIPA SHA2567af14ac9a341fd0b48ede12f0f3602da0ea4e4b11eb33c23a2868d0a9f5386e2.
+User installer: Reynard-0.19.0-Custom-Fixes-TrollStore.tipa, saved for delivery.
+Install over current app with TrollStore, preserving data. No duplicate build.
+
+All custom-only27 app/runtime/helper files retained exactly; four overlapping
+upstream files integrated, retaining ChatGPT background hook and delayed crash
+recovery plus0.19 error handling. Engine/patches exactly0.19 upstream. Correct
+new bridge/error headers derived from pinned source, no old ABI substitution.
+
+ON-DEVICE validation still pending. The user confirmed October27 background
+scene-update watchdog came from OUR build; timeout/restart cause unresolved.
+Do not claim0.19 update, CI success or background entitlements prove this fixed.
+Report already inspected; no need to ask the user to resend it automatically.
+Older build/checkpoint notes below are historical; this section is current.
+
 ## ACTIVE 0.19 build#2 / error-bridge header fix (2026-10-27)
 
 First0.19 build6ae0392a4a72334e32e5984b FAILED after3m21s at app compile:
