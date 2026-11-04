@@ -15,7 +15,15 @@ Official TrollStore SHA256:
 2f62860b972fd76f6a1cb1609e9664b8c126b6e3db23e23bd439a6928cbecd5f.
 New bridge/error headers derived from exact pinned sources and official patches.
 
-Preparing local checks and manual Codemagic free M2 build; build not started yet.
+ACTIVE free M2 Codemagic build1, source477a728d57bbbdfaa07538c8f40edf90df439cab:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6aea9c85a87b4d255fde5c57
+Native Swift/ObjC++ stability suite PASSED, including actual error bridge and
+all keyboard/picker, popup, session, task execution, download tests. Official
+Gecko159.0 package checksum/provenance/extraction PASSED. Rust/app compilation
+is running; final build/artifact pending. No duplicate run.
+Local9 package+5 entitlement tests and C++17 header smoke check passed.
+YAML and all shell steps valid. Billing disabled; fresh quota0/500 used.
+All three rederived bridge headers also byte-identical to019 ABI.
 NEVER buy/pay/subscribe/upgrade/enable billing/change limits. GitHub Actions
 stay disabled. Preserve the old 0.19 branch, installer and successful build.
 No on-device claims for 0.20 before user testing. No duplicate builds.
