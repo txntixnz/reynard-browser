@@ -1,32 +1,50 @@
-## ACTIVE: Reynard 0.20.0 with all custom fixes (2026-11-04)
+## COMPLETE: Reynard 0.20.0 with all custom fixes (2026-11-04)
 
-User reports ZERO ChatGPT issues with custom 0.19.0 and our fixes. This is the
+User reports ZERO ChatGPT issues with custom0.19.0 and our fixes. That is the
 confirmed working baseline. Older timeout/watchdog notes below are historical;
 do not present those old issues as still unresolved for the current user.
-User approved updating to 0.20.0, retaining every custom fix and 0.19 fallback.
+User approved0.20.0 update with every custom fix and0.19 fallback preserved.
 
-Official 0.20.0 e81351fddd517cc73ef802bf5160c574f586f5d8 merged into new branch
-`ios16-v020-custom-fixes`, based on custom 0.19 head 08428ea. Only upstream app
-change is version configuration. All browser/runtime/helper behavior stays
-byte-for-byte identical to working custom 0.19. Engine/patches match official
-0.20.0, Firefox 9a2dc53c369c7ae5172018b35988e1d2ffeff402, Gecko159.0.
-No official Reynard159.0.1 prebuilt exists; do not claim it is included.
+Source build477a728d57bbbdfaa07538c8f40edf90df439cab, branch
+`ios16-v020-custom-fixes`, PR11:
+https://github.com/txntixnz/reynard-browser/pull/11
+Free Mac mini M2 Codemagic build1 SUCCEEDED in6m29s:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6aea9c85a87b4d255fde5c57
+No duplicate build, purchase, billing change or GitHub Actions enablement.
+Before build billing disabled, fresh quota0/500 used, no previous transactions.
+NEVER buy/pay/subscribe/upgrade/enable billing/change limits.
+
+PASS: native Swift/ObjC++ regression suite including actual WebRequestErrorBridge
+with pinned159 headers,27codes/security/unknown; session/restoration, keyboard/
+picker, popup, background lifecycle/task execution, helper ownership, download
+lifecycle/destination tests. Official Gecko checksum/provenance/extraction,
+Rust support library, full app/helper compile, TrollStore signing, actual signed
+host/helper background entitlements all passed. Local9 package+5 entitlement
+tests, C++17 header smoke test, YAML and every shell syntax check passed.
+
+Artifact downloaded and independently verified: published SHA256 matched; outer
+ZIP and TIPA CRC passed; actual app0.20.0/build477a728/minimumiOS13.0 and bundle
+identifier com.minh-ton.Reynard confirmed. Parsed actual embedded Mach-O signed
+entitlements: host/helper retain runningboard.assertions.webkit and host retains
+unlimitedassertions/systemappassertions. These checks do not replace device testing.
+Installer: Reynard-0.20.0-Custom-Fixes-TrollStore.tipa (111603146bytes), saved.
+SHA256:5b9626c10bcbdf4a880e1750342fb777a76361a4574f2a509228593ce3a6ac2a.
+Install over current app in TrollStore to retain data. Old0.19 installer/branch
+and successful build remain unchanged as fallback. Await user's0.20 device test.
+
+Official0.20.0 e81351fddd517cc73ef802bf5160c574f586f5d8 merged with custom0.19
+head08428ea. All browser/runtime/helper code byte-for-byte identical to working
+custom0.19 except browser version configuration. All ChatGPT, picker/keyboard,
+popup/restoration/repaint, background execution/download, destination/signing,
+diagnostics and HTTP3 fixes retained. Engine/patches exactly official0.20.
+Firefox pin9a2dc53c369c7ae5172018b35988e1d2ffeff402, Gecko159.0.
+No official Reynard159.0.1 prebuilt existed; this build does NOT contain159.0.1.
 Official TrollStore SHA256:
 2f62860b972fd76f6a1cb1609e9664b8c126b6e3db23e23bd439a6928cbecd5f.
-New bridge/error headers derived from exact pinned sources and official patches.
+New bridge/error headers derived from exact pinned source and official patches;
+all three bridge headers also byte-identical to019 ABI. Old prep modes retained.
 
-ACTIVE free M2 Codemagic build1, source477a728d57bbbdfaa07538c8f40edf90df439cab:
-https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6aea9c85a87b4d255fde5c57
-Native Swift/ObjC++ stability suite PASSED, including actual error bridge and
-all keyboard/picker, popup, session, task execution, download tests. Official
-Gecko159.0 package checksum/provenance/extraction PASSED. Rust/app compilation
-is running; final build/artifact pending. No duplicate run.
-Local9 package+5 entitlement tests and C++17 header smoke check passed.
-YAML and all shell steps valid. Billing disabled; fresh quota0/500 used.
-All three rederived bridge headers also byte-identical to019 ABI.
-NEVER buy/pay/subscribe/upgrade/enable billing/change limits. GitHub Actions
-stay disabled. Preserve the old 0.19 branch, installer and successful build.
-No on-device claims for 0.20 before user testing. No duplicate builds.
+Older checkpoint sections below are historical and superseded by this section.
 
 ## COMPLETE: Reynard 0.19.0 with custom fixes (2026-10-27)
 
