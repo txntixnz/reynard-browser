@@ -1,3 +1,25 @@
+## ACTIVE: Reynard 0.20.0 with all custom fixes (2026-11-04)
+
+User reports ZERO ChatGPT issues with custom 0.19.0 and our fixes. This is the
+confirmed working baseline. Older timeout/watchdog notes below are historical;
+do not present those old issues as still unresolved for the current user.
+User approved updating to 0.20.0, retaining every custom fix and 0.19 fallback.
+
+Official 0.20.0 e81351fddd517cc73ef802bf5160c574f586f5d8 merged into new branch
+`ios16-v020-custom-fixes`, based on custom 0.19 head 08428ea. Only upstream app
+change is version configuration. All browser/runtime/helper behavior stays
+byte-for-byte identical to working custom 0.19. Engine/patches match official
+0.20.0, Firefox 9a2dc53c369c7ae5172018b35988e1d2ffeff402, Gecko159.0.
+No official Reynard159.0.1 prebuilt exists; do not claim it is included.
+Official TrollStore SHA256:
+2f62860b972fd76f6a1cb1609e9664b8c126b6e3db23e23bd439a6928cbecd5f.
+New bridge/error headers derived from exact pinned sources and official patches.
+
+Preparing local checks and manual Codemagic free M2 build; build not started yet.
+NEVER buy/pay/subscribe/upgrade/enable billing/change limits. GitHub Actions
+stay disabled. Preserve the old 0.19 branch, installer and successful build.
+No on-device claims for 0.20 before user testing. No duplicate builds.
+
 ## COMPLETE: Reynard 0.19.0 with custom fixes (2026-10-27)
 
 Latest source build7ad03f13c45d3e37c4c8f2f3ff3671d5a76403e8 on branch

@@ -33,6 +33,9 @@ RELEASE_018_URL = "https://github.com/minh-ton/reynard-browser/releases/download
 RELEASE_019_COMMIT = "24a99b717ca82aa8ac9777123692a653cc8bf4ee"
 RELEASE_019_SHA256 = "6076628afff639c24a9c7cd290108d9fbc3014f493bc74c7692b22eb3f418866"
 RELEASE_019_URL = "https://github.com/minh-ton/reynard-browser/releases/download/0.19.0/Reynard-TrollStore.tipa"
+RELEASE_020_COMMIT = "e81351fddd517cc73ef802bf5160c574f586f5d8"
+RELEASE_020_SHA256 = "2f62860b972fd76f6a1cb1609e9664b8c126b6e3db23e23bd439a6928cbecd5f"
+RELEASE_020_URL = "https://github.com/minh-ton/reynard-browser/releases/download/0.20.0/Reynard-TrollStore.tipa"
 PREFIX = "Payload/Reynard.app/"
 RUNTIME = PREFIX + "Frameworks/GeckoView.framework/Frameworks/"
 LIBRARIES = {"XUL", "libfreebl3.dylib", "liblgpllibs.dylib", "libmozinference.dylib",
@@ -101,6 +104,7 @@ def main():
     modes.add_argument("--release-0171", action="store_true")
     modes.add_argument("--release-018", action="store_true")
     modes.add_argument("--release-019", action="store_true")
+    modes.add_argument("--release-020", action="store_true")
     parser.add_argument("--compile-check-only", action="store_true",
                         help="Allow editor implementation changes for app compilation; packaging is disabled")
     args = parser.parse_args()
@@ -124,7 +128,13 @@ def main():
         engine_tag = "FIREFOX_158_0_1_RELEASE"
         expected_digest = RELEASE_019_SHA256
         release_url = RELEASE_019_URL
-    release_build = engine_commit[:7] if is_release_017 or args.release_018 or args.release_019 else BUILD
+    if args.release_020:
+        engine_commit = RELEASE_020_COMMIT
+        version = "0.20.0"
+        engine_tag = "FIREFOX_159_0_RELEASE"
+        expected_digest = RELEASE_020_SHA256
+        release_url = RELEASE_020_URL
+    release_build = engine_commit[:7] if is_release_017 or args.release_018 or args.release_019 or args.release_020 else BUILD
     if args.compile_check_only and not args.keyboard_engine:
         parser.error("--compile-check-only requires --keyboard-engine")
     verify_engine_sources(engine_commit, args.compile_check_only)
@@ -185,9 +195,9 @@ def main():
     if not all((binary_dir / item).exists() for item in ("chrome.manifest", "chrome", "components", "defaults", "res")):
         raise RuntimeError("Released engine runtime resources are missing")
     include = dist / "include"
-    headers = "tools/prebuilt-gecko-headers-019" if args.release_019 else "tools/prebuilt-gecko-headers-018" if args.release_018 else "tools/prebuilt-gecko-headers-017" if is_release_017 else "tools/prebuilt-gecko-headers"
+    headers = "tools/prebuilt-gecko-headers-020" if args.release_020 else "tools/prebuilt-gecko-headers-019" if args.release_019 else "tools/prebuilt-gecko-headers-018" if args.release_018 else "tools/prebuilt-gecko-headers-017" if is_release_017 else "tools/prebuilt-gecko-headers"
     shutil.copytree(ROOT / headers, include, dirs_exist_ok=True)
-    gecko_version = "158.0.1" if args.release_019 else "158.0" if args.release_018 else "157.0.1" if is_release_017 else "157.0"
+    gecko_version = "159.0" if args.release_020 else "158.0.1" if args.release_019 else "158.0" if args.release_018 else "157.0.1" if is_release_017 else "157.0"
     (include / "mozilla-config.h").write_text(f'#define MOZILLA_VERSION "{gecko_version}"\n')
     # The existing app packaging script expects this source theme directory.
     theme = ROOT / "engine/firefox/toolkit/mozapps/extensions/default-theme"
