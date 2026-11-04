@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix="reynard-stability-") as tmp:
     if (ROOT / "browser/GeckoView/Support/WebRequestErrorBridge.mm").exists():
         subprocess.run([
             "clang++", "-std=c++17", "-fobjc-arc", "-framework", "Foundation",
-            "-I", str(ROOT / "tools/prebuilt-gecko-headers-019"),
+            "-I", str(ROOT / "tools/prebuilt-gecko-headers-020"),
             "-I", str(ROOT / "browser/GeckoView/Support"),
             str(ROOT / "browser/GeckoView/Support/WebRequestErrorBridge.mm"),
             str(ROOT / "tests/stability/WebRequestErrorRegression.mm"),
