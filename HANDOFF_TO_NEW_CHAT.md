@@ -1,3 +1,22 @@
+## ACTIVE: Reynard 0.20.1 with all custom fixes (2026-11-06)
+
+User asked to repeat the custom update for official 0.20.1, published
+Nov 6 local time. Upstream fixes the 0.20.0 website sign-in regression by
+removing socket-process networking on iOS. It also adds Leave Page prompts
+and context menus for bookmarks/history. Firefox remains Gecko 159.0.
+
+Official 0.20.1 commit 219bc31ec42b66ef0acfd5440a25cb0e1df9b69d merged into
+`ios16-v0201-custom-fixes`, based on custom 0.20.0 head 5f4c9ff. All 31 custom
+app/support files remain unchanged. Engine/patches match official 0.20.1.
+Firefox pin and bridge patches match 0.20.0, so reuse the verified 159 headers
+with the new 0.20.1 engine. Official TrollStore TIPA SHA256:
+e2ab5e555617bc5da9f7597a070ef67247feac75c9103d5e684612c8bc0c0370.
+
+Preserve 0.20.0 and 0.19.0 source/installer fallbacks. User previously confirmed
+zero ChatGPT issues on 0.19.0 with our fixes. No device validation of 0.20.1 yet.
+Prepare and test before the manual Codemagic free M2 build. No paid services,
+purchases, subscription, billing changes or GitHub Actions enablement.
+
 ## COMPLETE: Reynard 0.20.0 with all custom fixes (2026-11-04)
 
 User reports ZERO ChatGPT issues with custom0.19.0 and our fixes. That is the

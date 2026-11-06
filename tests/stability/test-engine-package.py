@@ -53,38 +53,54 @@ class EnginePackageTests(unittest.TestCase):
         for name in names:
             self.assertIn(name, namespace["errors"])
 
-    def test_020_selects_matching_engine_headers_and_rejects_other_builds(self):
-        for version, build in [("0.20.0", "e81351f"), ("0.18.0", "860bb6f"), ("0.20.0", "incorrect")]:
-            with self.subTest(version=version, build=build), tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
-                (root / "engine").mkdir()
-                (root / "engine/release.txt").write_text("FIREFOX_159_0_RELEASE\n")
-                shutil.copytree(ROOT / "tools/prebuilt-gecko-headers-020", root / "tools/prebuilt-gecko-headers-020")
-                package = root / "release.tipa"
-                with zipfile.ZipFile(package, "w") as archive:
-                    archive.writestr(engine.PREFIX + "Info.plist", plistlib.dumps({
-                        "CFBundleShortVersionString": version, "CFBundleVersion": build,
-                    }))
-                    for library in engine.LIBRARIES:
-                        archive.writestr(engine.PREFIX + "Frameworks/" + library, b"fixture")
-                    for resource in ["chrome.manifest", "chrome/test", "components/test", "defaults/test", "res/test", "default-theme/manifest.json"]:
-                        archive.writestr(engine.RUNTIME + resource, b"fixture")
-                digest = hashlib.sha256(package.read_bytes()).hexdigest()
-                with patch.object(engine, "ROOT", root), patch.object(engine, "RELEASE_020_SHA256", digest), patch.object(engine, "verify_engine_sources") as verify, patch("sys.argv", ["prepare", "--release-020", "--package", str(package)]):
-                    if (version, build) != ("0.20.0", "e81351f"):
-                        with self.assertRaisesRegex(RuntimeError, "version/build mismatch"):
-                            engine.main()
-                        continue
-                    engine.main()
-                    verify.assert_called_once_with(engine.RELEASE_020_COMMIT, False)
-                dist = root / "engine/firefox/obj-aarch64-apple-ios/dist"
-                self.assertEqual((dist / "include/mozilla-config.h").read_text(), '#define MOZILLA_VERSION "159.0"\n')
-                bridge = (dist / "include/GeckoView/GeckoViewSwiftSupport.h").read_text()
-                self.assertIn("@protocol GeckoViewKeyCommandDelegate", bridge)
-                self.assertIn("errorPageURI", bridge)
-                self.assertIn("reloadWithHttpsOnlyExceptionForPageURI:", bridge)
-                for header in ["nsError.h", "ErrorList.h", "mozilla/Likely.h"]:
-                    self.assertTrue((dist / "include" / header).is_file(), header)
+    def test_020_releases_select_matching_engine_and_reject_each_other(self):
+        for release, expected_version, commit in [
+            ("020", "0.20.0", engine.RELEASE_020_COMMIT),
+            ("0201", "0.20.1", engine.RELEASE_0201_COMMIT),
+        ]:
+            other_version, other_build = (
+                ("0.20.1", engine.RELEASE_0201_COMMIT[:7]) if release == "020"
+                else ("0.20.0", engine.RELEASE_020_COMMIT[:7])
+            )
+            for version, build in [
+                (expected_version, commit[:7]),
+                (other_version, other_build),
+                (expected_version, other_build),
+            ]:
+                with self.subTest(release=release, version=version, build=build):
+                    self.check_020_package(release, expected_version, commit, version, build)
+
+    def check_020_package(self, release, expected_version, commit, version, build):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "engine").mkdir()
+            (root / "engine/release.txt").write_text("FIREFOX_159_0_RELEASE\n")
+            shutil.copytree(ROOT / "tools/prebuilt-gecko-headers-020", root / "tools/prebuilt-gecko-headers-020")
+            package = root / "release.tipa"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr(engine.PREFIX + "Info.plist", plistlib.dumps({
+                    "CFBundleShortVersionString": version, "CFBundleVersion": build,
+                }))
+                for library in engine.LIBRARIES:
+                    archive.writestr(engine.PREFIX + "Frameworks/" + library, b"fixture")
+                for resource in ["chrome.manifest", "chrome/test", "components/test", "defaults/test", "res/test", "default-theme/manifest.json"]:
+                    archive.writestr(engine.RUNTIME + resource, b"fixture")
+            digest = hashlib.sha256(package.read_bytes()).hexdigest()
+            with patch.object(engine, "ROOT", root), patch.object(engine, f"RELEASE_{release}_SHA256", digest), patch.object(engine, "verify_engine_sources") as verify, patch("sys.argv", ["prepare", f"--release-{release}", "--package", str(package)]):
+                if (version, build) != (expected_version, commit[:7]):
+                    with self.assertRaisesRegex(RuntimeError, "version/build mismatch"):
+                        engine.main()
+                    return
+                engine.main()
+                verify.assert_called_once_with(commit, False)
+            dist = root / "engine/firefox/obj-aarch64-apple-ios/dist"
+            self.assertEqual((dist / "include/mozilla-config.h").read_text(), '#define MOZILLA_VERSION "159.0"\n')
+            bridge = (dist / "include/GeckoView/GeckoViewSwiftSupport.h").read_text()
+            self.assertIn("@protocol GeckoViewKeyCommandDelegate", bridge)
+            self.assertIn("errorPageURI", bridge)
+            self.assertIn("reloadWithHttpsOnlyExceptionForPageURI:", bridge)
+            for header in ["nsError.h", "ErrorList.h", "mozilla/Likely.h"]:
+                self.assertTrue((dist / "include" / header).is_file(), header)
 
     def test_019_selects_matching_engine_headers_and_rejects_other_builds(self):
         for version, build in [("0.19.0", "24a99b7"), ("0.18.0", "860bb6f"), ("0.19.0", "incorrect")]:

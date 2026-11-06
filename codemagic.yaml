@@ -1,10 +1,10 @@
-# Reynard 0.20.0 / Gecko 159.0 / iOS 16 / TrollStore
+# Reynard 0.20.1 / Gecko 159.0 / iOS 16 / TrollStore
 # Codemagic PERSONAL FREE plan only. Do not enable billing.
 # This workflow uses ONLY the free macOS M2 instance and has NO automatic triggers.
-# Run manually from the ios16-v020-custom-fixes branch.
+# Run manually from the ios16-v0201-custom-fixes branch.
 workflows:
-  reynard-ios16-020-trollstore:
-    name: Reynard 0.20.0 + iOS 16 fixes (TrollStore)
+  reynard-ios16-0201-trollstore:
+    name: Reynard 0.20.1 + iOS 16 fixes (TrollStore)
     instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
@@ -29,14 +29,14 @@ workflows:
           set -euo pipefail
           test "$(uname -s)" = Darwin
           test "$(uname -m)" = arm64
-          if [ "${CM_BRANCH:-}" != 'ios16-v020-custom-fixes' ]; then
-            echo 'Refusing to build a different branch; choose ios16-v020-custom-fixes.' >&2
+          if [ "${CM_BRANCH:-}" != 'ios16-v0201-custom-fixes' ]; then
+            echo 'Refusing to build a different branch; choose ios16-v0201-custom-fixes.' >&2
             exit 1
           fi
           test "$(cat engine/release.txt)" = 'FIREFOX_159_0_RELEASE'
           xcodebuild -version
           python3 --version
-          git cat-file -e 'e81351fddd517cc73ef802bf5160c574f586f5d8^{commit}'
+          git cat-file -e '219bc31ec42b66ef0acfd5440a25cb0e1df9b69d^{commit}'
       - name: Run browser stability and packaging regression tests
         script: |
           set -euo pipefail
@@ -50,10 +50,10 @@ workflows:
             brew install ldid
           fi
           python3 -c 'import hashlib; assert hasattr(hashlib, "file_digest")'
-      - name: Verify and extract pinned official Gecko 159.0 release
+      - name: Verify and extract the official 0.20.1 Gecko 159.0 engine
         script: |
           set -euo pipefail
-          python3 tools/release/prepare-prebuilt-gecko.py --release-020
+          python3 tools/release/prepare-prebuilt-gecko.py --release-0201
       - name: Initialize iDevice support and Rust toolchain
         script: |
           set -euo pipefail

@@ -1,13 +1,14 @@
-# Pinned 0.20.0 bridge headers
+# Pinned 0.20.0 and 0.20.1 bridge headers
 
 Derived from Firefox commit 9a2dc53c369c7ae5172018b35988e1d2ffeff402 by applying
 Reynard 0.20.0 commit e81351fddd517cc73ef802bf5160c574f586f5d8's unmodified
 IOSBootstrap, GeckoViewSwiftSupport and GeckoViewRuntimeSupport header patches.
 Original MPL notices are retained.
 
-The browser-only build verifies exact engine/patch sources and the official
-0.20.0 TrollStore package's SHA-256, version and build before using Gecko 159.0.
-This is the official released engine, not Gecko 159.0.1.
+The browser-only build verifies exact engine/patch sources and each official
+TrollStore package's SHA-256, version and build before using Gecko 159.0.
+Reynard 0.20.1 keeps the same Firefox pin and bridge patches, so it uses these
+same headers with its own verified engine package and networking fix.
 Older release headers and preparation modes remain available.
 
 The unmodified `nsError.h` (xpcom/base) and `mozilla/Likely.h` (mfbt) are also
