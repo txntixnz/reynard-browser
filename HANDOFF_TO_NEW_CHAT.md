@@ -1,4 +1,4 @@
-## ACTIVE: Reynard 0.20.1 with all custom fixes (2026-11-06)
+## COMPLETE: Reynard 0.20.1 with all custom fixes (2026-11-06)
 
 User asked to repeat the custom update for official 0.20.1, published
 Nov 6 local time. Upstream fixes the 0.20.0 website sign-in regression by
@@ -12,10 +12,28 @@ Firefox pin and bridge patches match 0.20.0, so reuse the verified 159 headers
 with the new 0.20.1 engine. Official TrollStore TIPA SHA256:
 e2ab5e555617bc5da9f7597a070ef67247feac75c9103d5e684612c8bc0c0370.
 
-Preserve 0.20.0 and 0.19.0 source/installer fallbacks. User previously confirmed
-zero ChatGPT issues on 0.19.0 with our fixes. No device validation of 0.20.1 yet.
-Prepare and test before the manual Codemagic free M2 build. No paid services,
-purchases, subscription, billing changes or GitHub Actions enablement.
+Source build `08a371aa35e1b42211413c166c39d6495c9c74c3`, draft PR #12:
+https://github.com/txntixnz/reynard-browser/pull/12
+Manual free Mac mini M2 build #1 succeeded in 6m 10s:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6aed5267ab17f8deb7534eec
+
+Passed local package and entitlement tests, YAML and shell syntax, exact
+source comparisons, official engine extraction, and rejection of the older
+0.20.0 engine on this branch. The native Swift/Objective-C++ suite, actual
+error bridge, engine verification, Rust library, full app and helper compile,
+TrollStore signing, and signed host/helper entitlement checks all passed.
+
+Installer `Reynard-0.20.1-Custom-Fixes-TrollStore.tipa` was downloaded, verified,
+and saved. SHA-256: 15269621a605900cb90a439f0d22691e097d3a4fa0893d0805b0aabf64788ed7.
+ZIP integrity and published checksum match; version 0.20.1, build 08a371a,
+minimum iOS 13.0, and unchanged bundle ID `com.minh-ton.Reynard`. Parsed the
+actual host and helper signature entitlements to confirm background permissions.
+
+Install over the current app in TrollStore. Preserve 0.20.0 and 0.19.0 source
+and installer fallbacks. The user confirmed zero ChatGPT issues on 0.19.0 with
+our fixes; 0.20.1 still needs on-device validation. The previous checkpoints
+below are historical. Billing disabled; 6 of 500 free minutes used before
+this build. No purchases, subscription, billing changes or Actions enablement.
 
 ## COMPLETE: Reynard 0.20.0 with all custom fixes (2026-11-04)
 
