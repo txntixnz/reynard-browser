@@ -39,11 +39,15 @@ RELEASE_020_URL = "https://github.com/minh-ton/reynard-browser/releases/download
 RELEASE_0201_COMMIT = "219bc31ec42b66ef0acfd5440a25cb0e1df9b69d"
 RELEASE_0201_SHA256 = "e2ab5e555617bc5da9f7597a070ef67247feac75c9103d5e684612c8bc0c0370"
 RELEASE_0201_URL = "https://github.com/minh-ton/reynard-browser/releases/download/0.20.1/Reynard-TrollStore.tipa"
+RELEASE_0221_COMMIT = "2222a37ebba2feb73ab91ff2f3a86bf36c990490"
+RELEASE_0221_SHA256 = "c85c88c27371de0002721e137d3e590a31fe399a8e3058a871ceff0d82f7d91f"
+RELEASE_0221_URL = "https://github.com/minh-ton/reynard-browser/releases/download/0.22.1/Reynard-TrollStore.tipa"
 PREFIX = "Payload/Reynard.app/"
 RUNTIME = PREFIX + "Frameworks/GeckoView.framework/Frameworks/"
 LIBRARIES = {"XUL", "libfreebl3.dylib", "liblgpllibs.dylib", "libmozinference.dylib",
              "libsoftokn3.dylib", "libmozavutil.dylib", "libmozglue.dylib",
              "libgkcodecs.dylib", "libmozavcodec.dylib", "libnss3.dylib"}
+ANGLE_LIBRARIES = {"libEGL.dylib", "libGLESv2.dylib"}
 
 
 class SafeRedirect(urllib.request.HTTPRedirectHandler):
@@ -109,6 +113,7 @@ def main():
     modes.add_argument("--release-019", action="store_true")
     modes.add_argument("--release-020", action="store_true")
     modes.add_argument("--release-0201", action="store_true")
+    modes.add_argument("--release-0221", action="store_true")
     parser.add_argument("--compile-check-only", action="store_true",
                         help="Allow editor implementation changes for app compilation; packaging is disabled")
     args = parser.parse_args()
@@ -139,7 +144,13 @@ def main():
         engine_tag = "FIREFOX_159_0_RELEASE"
         expected_digest = RELEASE_0201_SHA256 if args.release_0201 else RELEASE_020_SHA256
         release_url = RELEASE_0201_URL if args.release_0201 else RELEASE_020_URL
-    release_build = engine_commit[:7] if is_release_017 or args.release_018 or args.release_019 or is_release_020 else BUILD
+    if args.release_0221:
+        engine_commit = RELEASE_0221_COMMIT
+        version = "0.22.1"
+        engine_tag = "FIREFOX_160_0_RELEASE"
+        expected_digest = RELEASE_0221_SHA256
+        release_url = RELEASE_0221_URL
+    release_build = engine_commit[:7] if is_release_017 or args.release_018 or args.release_019 or is_release_020 or args.release_0221 else BUILD
     if args.compile_check_only and not args.keyboard_engine:
         parser.error("--compile-check-only requires --keyboard-engine")
     verify_engine_sources(engine_commit, args.compile_check_only)
@@ -164,6 +175,7 @@ def main():
     dist = ROOT / "engine/firefox/obj-aarch64-apple-ios/dist"
     binary_dir = dist / "bin"
     binary_dir.mkdir(parents=True, exist_ok=True)
+    required_libraries = LIBRARIES | ANGLE_LIBRARIES if args.release_0221 else LIBRARIES
     with zipfile.ZipFile(package) as archive:
         info = plistlib.loads(archive.read(PREFIX + "Info.plist"))
         expected_build = KEYBOARD_COMMIT[:7] if args.keyboard_engine else release_build
@@ -175,7 +187,7 @@ def main():
                 relative = item.filename[len(RUNTIME):]
             elif item.filename.startswith(PREFIX + "Frameworks/"):
                 relative = item.filename[len(PREFIX + "Frameworks/"):]
-                if relative not in LIBRARIES:
+                if relative not in required_libraries:
                     continue
                 copied_libraries.add(relative)
             else:
@@ -194,15 +206,16 @@ def main():
                 mode = (item.external_attr >> 16) & 0o777
                 if mode:
                     destination.chmod(mode)
-        if copied_libraries != LIBRARIES:
-            raise RuntimeError("Released package is missing engine libraries")
+        if copied_libraries != required_libraries:
+            missing = ", ".join(sorted(required_libraries - copied_libraries))
+            raise RuntimeError(f"Released package is missing engine libraries: {missing}")
 
     if not all((binary_dir / item).exists() for item in ("chrome.manifest", "chrome", "components", "defaults", "res")):
         raise RuntimeError("Released engine runtime resources are missing")
     include = dist / "include"
-    headers = "tools/prebuilt-gecko-headers-020" if is_release_020 else "tools/prebuilt-gecko-headers-019" if args.release_019 else "tools/prebuilt-gecko-headers-018" if args.release_018 else "tools/prebuilt-gecko-headers-017" if is_release_017 else "tools/prebuilt-gecko-headers"
+    headers = "tools/prebuilt-gecko-headers-020" if is_release_020 or args.release_0221 else "tools/prebuilt-gecko-headers-019" if args.release_019 else "tools/prebuilt-gecko-headers-018" if args.release_018 else "tools/prebuilt-gecko-headers-017" if is_release_017 else "tools/prebuilt-gecko-headers"
     shutil.copytree(ROOT / headers, include, dirs_exist_ok=True)
-    gecko_version = "159.0" if is_release_020 else "158.0.1" if args.release_019 else "158.0" if args.release_018 else "157.0.1" if is_release_017 else "157.0"
+    gecko_version = "160.0" if args.release_0221 else "159.0" if is_release_020 else "158.0.1" if args.release_019 else "158.0" if args.release_018 else "157.0.1" if is_release_017 else "157.0"
     (include / "mozilla-config.h").write_text(f'#define MOZILLA_VERSION "{gecko_version}"\n')
     # The existing app packaging script expects this source theme directory.
     theme = ROOT / "engine/firefox/toolkit/mozapps/extensions/default-theme"

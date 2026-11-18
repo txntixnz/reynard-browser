@@ -70,18 +70,30 @@ class EnginePackageTests(unittest.TestCase):
                 with self.subTest(release=release, version=version, build=build):
                     self.check_020_package(release, expected_version, commit, version, build)
 
-    def check_020_package(self, release, expected_version, commit, version, build):
+    def test_0221_requires_both_metal_angle_libraries(self):
+        commit = engine.RELEASE_0221_COMMIT
+        for missing in [None, "libEGL.dylib", "libGLESv2.dylib"]:
+            with self.subTest(missing=missing):
+                self.check_020_package(
+                    "0221", "0.22.1", commit, "0.22.1", commit[:7],
+                    engine_tag="FIREFOX_160_0_RELEASE", gecko_version="160.0",
+                    extra_libraries={"libEGL.dylib", "libGLESv2.dylib"}, missing=missing,
+                )
+
+    def check_020_package(self, release, expected_version, commit, version, build, *,
+                          engine_tag="FIREFOX_159_0_RELEASE", gecko_version="159.0",
+                          extra_libraries=frozenset(), missing=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "engine").mkdir()
-            (root / "engine/release.txt").write_text("FIREFOX_159_0_RELEASE\n")
+            (root / "engine/release.txt").write_text(f"{engine_tag}\n")
             shutil.copytree(ROOT / "tools/prebuilt-gecko-headers-020", root / "tools/prebuilt-gecko-headers-020")
             package = root / "release.tipa"
             with zipfile.ZipFile(package, "w") as archive:
                 archive.writestr(engine.PREFIX + "Info.plist", plistlib.dumps({
                     "CFBundleShortVersionString": version, "CFBundleVersion": build,
                 }))
-                for library in engine.LIBRARIES:
+                for library in (engine.LIBRARIES | extra_libraries) - {missing}:
                     archive.writestr(engine.PREFIX + "Frameworks/" + library, b"fixture")
                 for resource in ["chrome.manifest", "chrome/test", "components/test", "defaults/test", "res/test", "default-theme/manifest.json"]:
                     archive.writestr(engine.RUNTIME + resource, b"fixture")
@@ -91,10 +103,16 @@ class EnginePackageTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "version/build mismatch"):
                         engine.main()
                     return
+                if missing is not None:
+                    with self.assertRaisesRegex(RuntimeError, re.escape(missing)):
+                        engine.main()
+                    return
                 engine.main()
                 verify.assert_called_once_with(commit, False)
             dist = root / "engine/firefox/obj-aarch64-apple-ios/dist"
-            self.assertEqual((dist / "include/mozilla-config.h").read_text(), '#define MOZILLA_VERSION "159.0"\n')
+            self.assertEqual((dist / "include/mozilla-config.h").read_text(), f'#define MOZILLA_VERSION "{gecko_version}"\n')
+            for library in extra_libraries:
+                self.assertEqual((dist / "bin" / library).read_bytes(), b"fixture")
             bridge = (dist / "include/GeckoView/GeckoViewSwiftSupport.h").read_text()
             self.assertIn("@protocol GeckoViewKeyCommandDelegate", bridge)
             self.assertIn("errorPageURI", bridge)

@@ -9,6 +9,12 @@ The browser-only build verifies exact engine/patch sources and each official
 TrollStore package's SHA-256, version and build before using Gecko 159.0.
 Reynard 0.20.1 keeps the same Firefox pin and bridge patches, so it uses these
 same headers with its own verified engine package and networking fix.
+
+Reynard 0.22.1 uses Gecko 160.0. All three patched bridge headers, nsError.h,
+Likely.h and ErrorList.py were independently fetched or derived from its
+Firefox pin 2887d9de1f69c0e9776413da80e7ba0d1225dd9b and compared byte for
+byte with this bundle. All are identical, including the generated ErrorList.h.
+Only the release package and generated MOZILLA_VERSION value change.
 Older release headers and preparation modes remain available.
 
 The unmodified `nsError.h` (xpcom/base) and `mozilla/Likely.h` (mfbt) are also
