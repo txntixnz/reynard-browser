@@ -1,3 +1,34 @@
+## COMPLETE: Reynard 0.22.1 with custom fixes (2026-11-18)
+
+User approved the 0.22.1 update, with 0.20.1 kept as fallback, free builds only.
+Official 0.22.1 commit 2222a37ebba2feb73ab91ff2f3a86bf36c990490 merged over
+custom 0.20.1 a980eeca6e3f16b02cbc0194b07a5266d7d82e14 on branch
+`ios16-v0221-custom-fixes`. Thirty custom app/support files are unchanged;
+BrowserPreferences retains our HTTP/3 setting alongside upstream MIDI settings.
+Engine and patches are an exact match for official 0.22.1. Gecko 160.0 Firefox
+pin 2887d9de1f69c0e9776413da80e7ba0d1225dd9b. The bridge/error headers were
+independently derived and compared byte for byte and match the existing bundle.
+Official TIPA SHA256 c85c88c27371de0002721e137d3e590a31fe399a8e3058a871ceff0d82f7d91f.
+The engine extractor requires both new Metal ANGLE libraries (libEGL and
+libGLESv2) in addition to the previous libraries; missing-library tests passed.
+Local package/entitlement tests and CI syntax passed. Free Mac mini M2 build
+finished in 6m 59s from source d917c9f02470ce7860f0c3182104133ede244770:
+https://codemagic.io/app/6ad4f19e6f273f3d5e2c1ce6/build/6afd19b6d133a39c4a127d4f
+Draft PR #13: https://github.com/txntixnz/reynard-browser/pull/13
+Native stability tests, engine preparation, support library, app/helpers and
+signed packaging passed. Independently verified the downloaded installer:
+version 0.22.1, same bundle ID, minimum iOS 13.0, ZIP integrity, published
+checksum, actual host/helper background entitlements, and executable code
+matching the upstream XUL, libEGL and libGLESv2 libraries.
+
+Reynard-0.22.1-Custom-Fixes-TrollStore.tipa saved for delivery.
+SHA-256: 247fc84b21e2e0dc7aa98f4c5d70c8b7619d2f26070b3edba67c11aa770425ac.
+Install over the existing version in TrollStore to retain data.
+
+No purchases, billing changes or GitHub Actions enablement. Personal Codemagic
+free M2 only; 12/500 minutes used before build and subscription disabled.
+Preserve the 0.20.1 branch and verified installer. 0.22.1 device testing pending.
+
 ## COMPLETE: Reynard 0.20.1 with all custom fixes (2026-11-06)
 
 User asked to repeat the custom update for official 0.20.1, published
